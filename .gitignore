@@ -1,0 +1,15 @@
+# Real device config -- contains your ring's BLE address. Copy
+# config.sh.example to config.sh locally; only the example is tracked.
+config.sh
+
+# Runtime state from start_bridge.sh/stop_bridge.sh.
+.bridge.pid
+bridge.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

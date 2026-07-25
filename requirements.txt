@@ -1,0 +1,6 @@
+# Cross-platform BLE (Linux/macOS/Windows) -- the actual transport viatom-ble rides on.
+bleak>=0.21
+# Local WebSocket server that fans out readings to overlay.html.
+websockets>=12
+# Viatom/Wellue ring-oximeter BLE protocol + client (not on PyPI, installed from source).
+viatom-ble @ git+https://github.com/ecostech/viatom-ble.git

@@ -1,0 +1,14 @@
+# Local config for start_bridge.sh -- copy this file to config.sh and fill
+# in your own values. config.sh is gitignored on purpose: your BLE address
+# identifies your specific physical device, so it doesn't belong in a repo
+# others might fork, even though it isn't a secret in the password sense.
+#
+#   cp config.sh.example config.sh
+#
+# Find your address/UUID with (after `pip install -r requirements.txt`):
+#   source .venv/bin/activate && viatom-ble --scan-interactive
+ADDRESS="REPLACE_ME"
+
+# Uncomment to use a non-default WebSocket port. If you do, also update
+# WS_URL at the top of overlay.html's <script> to match.
+# WS_PORT="8765"
