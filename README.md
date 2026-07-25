@@ -13,6 +13,22 @@ Checkme O2 Max --BLE--> bridge.py --WebSocket--> overlay.html (OBS Browser Sourc
 > consumer-grade, not clinical-grade — don't use readings from this (or the
 > ring) to make health decisions.
 
+## Platform support
+
+- **macOS** — **Verified** against a real Checkme O2 Max, first try, no code
+  changes needed.
+- **Windows 10/11** — Implemented (auto-discovery, `.ps1` start/stop scripts)
+  but **not yet run against real hardware** — see the platform-specific notes
+  throughout this README and the comments in `start_bridge.ps1`/`stop_bridge.ps1`.
+- **Linux** — Untested, but `viatom-ble`/Bleak's primary development target is
+  actually a Raspberry Pi, so this is likely the best-supported platform
+  underneath — just use the `.sh` scripts and adjust the Bluetooth-permission
+  step below.
+
+If you test on Windows or Linux, opening an issue (or a PR) with what did or
+didn't work is genuinely useful — this table reflects what's been confirmed,
+not just what should theoretically work.
+
 ## Why not Pulsoid?
 
 Pulsoid's public API is read-only (widgets pull *from* your HR stream); pushing
@@ -33,6 +49,14 @@ with lower latency and no external dependency.
   Max on the first try** — no byte-offset changes needed.
 - It re-broadcasts every reading as JSON over a local WebSocket
   (`ws://localhost:8765`).
+- No address to hunt down and paste anywhere: if you don't pin one, `bridge.py`
+  scans for a compatible device on startup and connects to it automatically.
+  This only needs pinning (see below) if you own more than one Viatom/Wellue/Checkme
+  device, or want to skip the ~10s scan on every start. (This does its own
+  stricter name matching rather than reusing `viatom-ble`'s built-in filter —
+  see the `_looks_like_viatom` docstring in `bridge.py` for why: the library's
+  own filter substring-matches "po" against device names, which false-positives
+  on "AirPods Pro" — caught during testing with a real AirPods case nearby.)
 - [`overlay.html`](overlay.html) is a self-contained page (no external
   requests, no build step) that connects to that WebSocket and renders a
   beating heart icon + BPM + SpO2, with a transparent background sized for
@@ -41,58 +65,72 @@ with lower latency and no external dependency.
 
 ## Setup
 
+**macOS / Linux:**
+
 ```bash
 cd /path/to/vital-sign   # wherever you cloned this repo
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp config.sh.example config.sh
 ```
 
 On macOS, the first BLE scan will prompt for Bluetooth permission for your
 terminal — grant it in *System Settings → Privacy & Security → Bluetooth*.
+On Linux, add your user to the `bluetooth` group so BLE doesn't need `sudo`
+(`sudo usermod -aG bluetooth $USER`, then log out and back in).
 
-### 1. Find your device address
+**Windows 10/11** (PowerShell; unverified against real hardware — see
+[Platform support](#platform-support)):
+
+```powershell
+cd C:\path\to\vital-sign   # wherever you cloned this repo
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+If `Activate.ps1` refuses to run, PowerShell's default execution policy is
+blocking it — see the execution-policy note in
+[Automatic startup tied to an OBS scene](#automatic-startup-tied-to-an-obs-scene).
+
+### 1. Run the bridge
 
 **Make sure the ring is NOT currently connected to ViHealth or
 O2Insight_Pro** — BLE only allows one active connection, so quit/disconnect
 those apps first (fine, since you'd use this for streaming, not overnight
-CPAP-sync sessions).
+CPAP-sync sessions). Then, for a one-off manual run (useful the first time,
+to watch the logs and confirm readings look sane):
 
 ```bash
-viatom-ble --scan-interactive
+python3 bridge.py -v          # macOS/Linux
+python bridge.py -v           # Windows
 ```
 
-Wear the ring and pick it from the list. Copy the address/UUID it prints —
-you'll pass it to `bridge.py` next.
+With no `--address`, it scans for a compatible device and connects to
+whichever one it finds — see it happen in the verbose log. If you own more
+than one such device, pass one explicitly instead
+(`--address <ADDRESS>`; find it with `viatom-ble --scan-interactive`).
 
-### 2. Run the bridge
-
-For a one-off manual run (useful the first time, to watch the logs):
+For everyday use, use the start/stop scripts instead (idempotent — safe to
+call repeatedly, tracks their own PID, logs to `bridge.log`):
 
 ```bash
-python3 bridge.py --address <ADDRESS_FROM_STEP_1> -v
+./start_bridge.sh   # macOS/Linux: launches bridge.py in the background if not already running
+./stop_bridge.sh    # macOS/Linux: stops it if running; no-ops otherwise
 ```
 
-For everyday use, put the address in the `config.sh` you copied from
-`config.sh.example` during setup:
-
-```bash
-# edit config.sh:
-ADDRESS="<ADDRESS_FROM_STEP_1>"
+```powershell
+.\start_bridge.ps1  # Windows equivalents
+.\stop_bridge.ps1
 ```
 
-then use the start/stop scripts (idempotent — safe to call repeatedly,
-tracks its own PID in `.bridge.pid`, logs to `bridge.log`):
+These are what the automatic-startup section below wires into OBS. If you
+want to pin an address or a non-default port for these scripts specifically,
+copy `config.sh.example`/`config.ps1.example` to `config.sh`/`config.ps1`
+and edit it — otherwise skip this, the defaults (auto-discover, port 8765)
+just work.
 
-```bash
-./start_bridge.sh   # launches bridge.py in the background if not already running
-./stop_bridge.sh    # stops it if running; no-ops otherwise
-```
-
-These are what the automatic-startup section below wires into OBS.
-
-### 3. Add the overlay to OBS
+### 2. Add the overlay to OBS
 
 In OBS: **Sources → + → Browser Source**
 
@@ -114,21 +152,29 @@ plugin instead of an OBS Python script — it avoids matching OBS's embedded
 Python version to a venv containing `bleak`/`websockets`, which is a common
 source of "script failed to load" errors unrelated to your actual code.
 
-**Install** (macOS): download the `.pkg` from the
-[releases page](https://github.com/WarmUpTill/SceneSwitcher/releases),
-right-click it and choose *Open* to bypass Gatekeeper on an unnotarized
-installer, and follow the prompts. Restart OBS — *Advanced Scene Switcher*
-will appear under the **Tools** menu.
+**Install:**
+
+- macOS: download the `.pkg` from the
+  [releases page](https://github.com/WarmUpTill/SceneSwitcher/releases),
+  right-click it and choose *Open* to bypass Gatekeeper on an unnotarized
+  installer, and follow the prompts.
+- Windows: download the `-windows-x64-Installer.exe` from the same
+  [releases page](https://github.com/WarmUpTill/SceneSwitcher/releases), run
+  it, and click *More info → Run anyway* if SmartScreen blocks it (same
+  unnotarized-installer situation as macOS's Gatekeeper, different dialog).
+
+Either way, restart OBS afterward — *Advanced Scene Switcher* will appear
+under the **Tools** menu.
 
 **Configure** (Tools → Advanced Scene Switcher → Macro tab):
 
 1. **New macro** — name it e.g. `vital-sign`.
 2. **Condition** → add a **Scene** condition, set to the scene that contains
    your `overlay.html` browser source.
-3. **Action** → add a **Run** action (System category), pointing at
-   `start_bridge.sh` in wherever you cloned this repo (use the full path)
-4. **Else Action** → add a **Run** action pointing at `stop_bridge.sh`
-   the same way
+3. **Action** → add a **Run** action (System category) pointing at your
+   start script (see platform notes below for the exact path/arguments).
+4. **Else Action** → add a **Run** action pointing at your stop script the
+   same way.
 
    (Advanced Scene Switcher runs the main actions while the condition is
    true and the "Else Actions" once it becomes false — so switching *to*
@@ -141,11 +187,29 @@ will appear under the **Tools** menu.
    if the plugin isn't already running.
 
 Exact field names may differ slightly by version — the "Run" action under
-System is what you want; if there's a separate Path vs. Arguments field,
-the full script path goes in Path with no arguments needed.
+System is what you want.
 
-Check `bridge.log` if the overlay doesn't light up after a scene switch —
-it'll show whether the BLE connection attempt happened at all.
+**macOS/Linux path**: the full path to `start_bridge.sh`/`stop_bridge.sh`,
+no arguments needed — the shebang line makes them directly executable.
+
+**Windows path**: `.ps1` files aren't directly executable the way `.sh`
+files are (no shebang-equivalent, and PowerShell's default execution policy
+blocks scripts outright), so point the Run action at `powershell.exe`
+itself and pass the script as an argument:
+
+- If the Run action has one combined command-line field:
+  `powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\start_bridge.ps1"`
+  (and the `stop_bridge.ps1` equivalent for the Else Action)
+- If it has separate Path/Arguments fields: Path = `powershell.exe`,
+  Arguments = `-ExecutionPolicy Bypass -File "C:\path\to\start_bridge.ps1"`
+
+`-ExecutionPolicy Bypass` only affects this one invocation — it does not
+change your system's execution policy permanently, so there's no lasting
+security trade-off from using it here.
+
+Check `bridge.log` (and, on Windows, `bridge.out.log`) if the overlay
+doesn't light up after a scene switch — it'll show whether the BLE
+connection attempt happened at all.
 
 ## Troubleshooting
 
@@ -163,6 +227,19 @@ it'll show whether the BLE connection attempt happened at all.
 - **Ring battery draining fast while streaming**: expected — continuous BLE
   polling keeps the radio active the whole session, same as the official app
   would.
+- **Multiple devices found** (auto-discovery error listing more than one):
+  you own more than one Viatom/Wellue/Checkme device, or another one is in
+  range. Pin the one you want with `--address`, or `ADDRESS` in
+  `config.sh`/`config.ps1`.
+- **(Windows) `start_bridge.ps1` does nothing / "running scripts is
+  disabled"**: PowerShell's execution policy is blocking it. Run it directly
+  via `powershell.exe -ExecutionPolicy Bypass -File start_bridge.ps1` to
+  confirm that's the cause — see the execution-policy note above for the
+  permanent fix when wiring it into Advanced Scene Switcher.
+- **(Windows) `bridge.log` looks empty after a run**: check
+  `bridge.out.log` too — Start-Process splits stdout/stderr into separate
+  files there, and both get overwritten (not appended) on every start,
+  unlike the `.sh` scripts.
 
 ## Customizing the overlay
 
@@ -182,11 +259,11 @@ just refresh the OBS browser source after saving.
   unrelated webpage open in a regular browser tab from quietly opening a
   WebSocket to this port and reading your live vitals in the background —
   see the `ALLOWED_ORIGINS` comment in `bridge.py`.
-- **What's excluded from git** (see `.gitignore`): `config.sh` (contains
-  your ring's BLE address — a device identifier, not a secret, but no
-  reason to publish it), `bridge.log` (may contain historical readings),
-  and `.bridge.pid`. Only `config.sh.example` (a placeholder template) is
-  tracked.
+- **What's excluded from git** (see `.gitignore`): `config.sh`/`config.ps1`
+  (contain your ring's BLE address — a device identifier, not a secret, but
+  no reason to publish it), `bridge.log`/`bridge.out.log` (may contain
+  historical readings), and `.bridge.pid`. Only the `.example` templates
+  are tracked.
 - **BLE pairing**: connecting means the ring briefly can't be reached by
   ViHealth/O2Insight_Pro (BLE allows one central connection at a time). No
   pairing credentials are stored beyond what `viatom-ble`/Bleak need to

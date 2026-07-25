@@ -1,20 +1,20 @@
-# Optional local config for start_bridge.sh -- most people don't need this
+# Optional local config for start_bridge.ps1 -- most people don't need this
 # file at all. bridge.py auto-discovers your ring over BLE if you don't
 # pin an address, which is fine as long as exactly one Viatom/Wellue/Checkme
-# device is in range. Copy this file to config.sh only if you want to:
+# device is in range. Copy this file to config.ps1 only if you want to:
 #   - skip the ~10s discovery scan on every start (faster reconnects), or
 #   - pin a specific device because you own more than one
 #
-#   cp config.sh.example config.sh
+#   Copy-Item config.ps1.example config.ps1
 #
-# config.sh is gitignored on purpose: your BLE address identifies your
+# config.ps1 is gitignored on purpose: your BLE address identifies your
 # specific physical device, so it doesn't belong in a repo others might
 # fork, even though it isn't a secret in the password sense.
 #
-# Find your address/UUID with (after `pip install -r requirements.txt`):
-#   source .venv/bin/activate && viatom-ble --scan-interactive
-# ADDRESS="REPLACE_ME"
+# Find your address with (after `pip install -r requirements.txt`):
+#   .venv\Scripts\Activate.ps1; viatom-ble --scan-interactive
+# $Address = "REPLACE_ME"
 
 # Uncomment to use a non-default WebSocket port. If you do, also update
 # WS_URL at the top of overlay.html's <script> to match.
-# WS_PORT="8765"
+# $WsPort = 8765

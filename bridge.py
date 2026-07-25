@@ -16,9 +16,12 @@ import contextlib
 import json
 import logging
 import signal
+from collections.abc import Sequence
 
 import websockets
-from viatom_ble import Reading, ViatomClient
+from viatom_ble import Reading, ViatomClient, scan_devices
+from viatom_ble.protocol import SERVICE_UUID
+from viatom_ble.scanner import COMPATIBLE_NAME_PREFIXES
 
 log = logging.getLogger("bridge")
 
@@ -75,6 +78,68 @@ async def broadcast(payload: dict) -> None:
     )
 
 
+def _looks_like_viatom(name: str | None, service_uuids: Sequence[str]) -> bool:
+    """Stricter stand-in for viatom_ble.scanner's own name filter.
+
+    That filter checks `prefix in name.lower()` -- a substring test --
+    despite the constant being named COMPATIBLE_NAME_*PREFIXES*. In
+    practice that means "po" also matches inside "AirPods Pro", which
+    showed up as a false positive during testing the very first time an
+    AirPods case was open nearby. We reuse the library's own prefix list
+    (so it stays in sync if upstream adds a model) but apply a real
+    `.startswith()` check, plus the service-UUID fallback the library
+    documents for rings that drop their name from later advertisements.
+    """
+    if name and name.lower().startswith(COMPATIBLE_NAME_PREFIXES):
+        return True
+    return any(u.lower() == SERVICE_UUID.lower() for u in service_uuids)
+
+
+async def resolve_address(explicit_address: str | None, scan_duration: float) -> str:
+    """Return the BLE address to connect to, scanning for it if not given.
+
+    Most people own exactly one Viatom/Wellue/Checkme device, so requiring
+    a manually copy-pasted address for every setup is friction with no
+    payoff -- we can just ask Bleak who's nearby. Pinning an address (via
+    --address or config.sh/config.ps1's ADDRESS) is still supported for
+    anyone with more than one such device in range, or who wants to skip
+    the scan for a faster start.
+    """
+    if explicit_address:
+        return explicit_address
+
+    log.info(f"No --address given; scanning for a Viatom-family device ({scan_duration:.0f}s)...")
+    # name_filter=False: do our own filtering below instead of the library's,
+    # per the _looks_like_viatom docstring.
+    all_found = await scan_devices(duration=scan_duration, name_filter=False)
+    found = [
+        (device, adv)
+        for device, adv in all_found
+        if _looks_like_viatom(adv.local_name or device.name, adv.service_uuids or ())
+    ]
+
+    if not found:
+        raise RuntimeError(
+            "No Viatom/Wellue/Checkme device found. Make sure the ring is worn/awake "
+            "and not already connected to ViHealth/O2Insight_Pro (BLE only allows one "
+            "connection at a time), then try again -- or pass --address explicitly."
+        )
+
+    if len(found) > 1:
+        listing = "\n".join(
+            f"  - {adv.local_name or device.name or '<unnamed>':<24} {device.address}  RSSI={adv.rssi}"
+            for device, adv in found
+        )
+        raise RuntimeError(
+            f"Multiple matching devices found; pin one explicitly with --address "
+            f"(or ADDRESS in config.sh/config.ps1):\n{listing}"
+        )
+
+    device, adv = found[0]
+    log.info(f"Found {adv.local_name or device.name or '<unnamed>'} at {device.address}")
+    return device.address
+
+
 async def handler(websocket) -> None:
     """Per-connection handler: register, replay the last known state, idle."""
     CLIENTS.add(websocket)
@@ -92,9 +157,15 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--address",
-        required=True,
-        help="BLE address (Linux/Windows) or CoreBluetooth UUID (macOS). "
-        "Find it with: viatom-ble --scan-interactive",
+        default=None,
+        help="BLE address (Linux/Windows) or CoreBluetooth UUID (macOS). Omit to "
+        "auto-discover -- fine as long as exactly one compatible device is in range.",
+    )
+    parser.add_argument(
+        "--scan-duration",
+        type=float,
+        default=10.0,
+        help="Seconds to scan for a device when --address is omitted",
     )
     parser.add_argument("--ws-port", type=int, default=8765)
     parser.add_argument("--read-period", type=float, default=2.0, help="Seconds between poll requests")
@@ -106,6 +177,8 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
+    address = await resolve_address(args.address, args.scan_duration)
+
     async def on_reading(reading: Reading) -> None:
         await broadcast(reading_to_payload(reading))
 
@@ -114,7 +187,7 @@ async def main() -> None:
         await broadcast({"type": "state", "state": state})
 
     client = ViatomClient(
-        address=args.address,
+        address=address,
         read_period=args.read_period,
         on_reading=on_reading,
         on_state_change=on_state_change,
@@ -135,7 +208,13 @@ async def main() -> None:
     client_task = asyncio.create_task(client.run_forever())
 
     # SIGTERM is how stop_bridge.sh asks us to shut down; SIGINT covers
-    # Ctrl-C during a manual foreground run.
+    # Ctrl-C during a manual foreground run. loop.add_signal_handler is
+    # Unix-only (CPython docs say so explicitly) -- on Windows this whole
+    # loop is a no-op via the NotImplementedError below, so stop_bridge.ps1
+    # force-terminates the process instead of requesting this clean
+    # shutdown, and a foreground Ctrl-C there just hits Python's default
+    # KeyboardInterrupt handling. Neither skips anything load-bearing: the
+    # OS reclaims the socket/BLE connection either way.
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

@@ -10,16 +10,18 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-if [[ ! -f "$DIR/config.sh" ]]; then
-  echo "config.sh not found -- copy config.sh.example to config.sh and fill in your device address." >&2
-  exit 1
+# config.sh is entirely optional -- bridge.py auto-discovers the ring over
+# BLE if ADDRESS is unset, so most people never need this file. Only
+# source it if it exists.
+ADDRESS=""
+WS_PORT="8765"
+if [[ -f "$DIR/config.sh" ]]; then
+  # shellcheck source=config.sh
+  source "$DIR/config.sh"
 fi
-# shellcheck source=config.sh
-source "$DIR/config.sh"
 
 PIDFILE="$DIR/.bridge.pid"
 LOGFILE="$DIR/bridge.log"
-WS_PORT="${WS_PORT:-8765}"
 
 # kill -0 just probes whether the PID is alive; it doesn't verify the PID
 # still belongs to *our* process (PIDs get reused). Good enough here since
@@ -30,7 +32,12 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
 fi
 rm -f "$PIDFILE"
 
-nohup "$DIR/.venv/bin/python3" "$DIR/bridge.py" --address "$ADDRESS" --ws-port "$WS_PORT" \
+ARGS=(--ws-port "$WS_PORT")
+if [[ -n "$ADDRESS" ]]; then
+  ARGS+=(--address "$ADDRESS")
+fi
+
+nohup "$DIR/.venv/bin/python3" "$DIR/bridge.py" "${ARGS[@]}" \
   >> "$LOGFILE" 2>&1 &
 echo $! > "$PIDFILE"
 disown  # detach from this shell so the bridge outlives the ASS/OBS process tree that spawned it
