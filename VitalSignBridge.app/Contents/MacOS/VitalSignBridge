@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Launched via `open -a VitalSignBridge.app` from Advanced Scene Switcher's
+# Run action, instead of running start_bridge.sh directly.
+#
+# Why this exists: when OBS spawns a Bluetooth-touching process directly (as
+# a subprocess -- which is what Advanced Scene Switcher's Run action does),
+# macOS's TCC privacy system holds OBS "responsible" for that Bluetooth
+# access. OBS.app's own Info.plist has no NSBluetoothAlwaysUsageDescription
+# (it doesn't need one for its own normal operation), so TCC can't even show
+# a permission prompt and hard-crashes the process instead -- this is not a
+# bug in bridge.py, see the crash report's "Responsible: OBS" line and
+# "Namespace TCC" termination reason.
+#
+# `open -a` launches this app through LaunchServices as its own independent,
+# top-level process rather than a direct child of whatever called `open` --
+# so THIS bundle's Info.plist (which does declare Bluetooth usage) is what
+# TCC evaluates instead of OBS's. Everything this script spawns inherits
+# that identity.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+exec "$DIR/start_bridge.sh"

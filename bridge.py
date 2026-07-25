@@ -36,14 +36,17 @@ CLIENTS: set = set()
 LATEST: dict = {"type": "state", "state": "idle"}
 
 # overlay.html is meant to be loaded as a local file (OBS Browser Source ->
-# "Local file"), which browsers send as a literal Origin: null header --
-# not the same as an absent header. `None` here covers the absent-header
-# case (plain WebSocket test clients, curl, etc). Restricting to these two
-# means a webpage open in a *real* browser tab can't quietly open a
-# WebSocket to this port and read your live vitals in the background; see
-# the "same-origin/localhost" note in the Origin header docs at
+# "Local file"). A generic browser would send a literal Origin: null header
+# for a file:// page, but OBS's embedded CEF browser sends "http://absolute"
+# instead for local-file sources specifically -- confirmed by testing
+# against a real running OBS instance, whose Browser Source repeatedly
+# retried and got rejected with this exact Origin until it was added here.
+# `None` covers the absent-header case (plain WebSocket test clients, curl,
+# etc). Restricting to these means a webpage open in a *real* browser tab
+# can't quietly open a WebSocket to this port and read your live vitals in
+# the background; see the Origin allowlist docs at
 # https://websockets.readthedocs.io/en/stable/topics/broadcast.html
-ALLOWED_ORIGINS = ["null", None]
+ALLOWED_ORIGINS = ["null", "http://absolute", None]
 
 
 def reading_to_payload(reading: Reading) -> dict:

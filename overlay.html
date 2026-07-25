@@ -5,10 +5,13 @@
   build step and makes no external network requests -- it only opens a
   WebSocket back to bridge.py on localhost, which is the only thing it needs.
 
-  Loading it via file:// means the browser sends `Origin: null` on the
-  WebSocket handshake; bridge.py's allowlist expects exactly that (see the
-  ALLOWED_ORIGINS comment there). If you ever serve this over HTTP instead
-  of as a local file, you'll need to add that origin to bridge.py too.
+  A generic file:// page would send `Origin: null` on the WebSocket
+  handshake, but OBS's embedded CEF browser sends `http://absolute` instead
+  for local-file browser sources specifically (confirmed against a real OBS
+  instance). bridge.py's allowlist expects both -- see ALLOWED_ORIGINS
+  there. If you ever serve this over HTTP instead of as a local file, or
+  hit new rejections in bridge.log after an OBS update changes this again,
+  you'll need to add that origin to bridge.py too.
 -->
 <!doctype html>
 <html lang="en">

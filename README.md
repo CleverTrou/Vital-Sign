@@ -189,8 +189,33 @@ under the **Tools** menu.
 Exact field names may differ slightly by version — the "Run" action under
 System is what you want.
 
-**macOS/Linux path**: the full path to `start_bridge.sh`/`stop_bridge.sh`,
-no arguments needed — the shebang line makes them directly executable.
+**macOS Action (start) — use the wrapper app, not `start_bridge.sh` directly:**
+
+- Path: `/usr/bin/open`
+- Arguments: `-a "/path/to/vital-sign/VitalSignBridge.app"`
+
+This is not optional cosmetics — pointing the Action directly at
+`start_bridge.sh` will crash with a macOS privacy (TCC) error the moment it
+tries to touch Bluetooth. When OBS spawns a Bluetooth-touching process as a
+direct subprocess, macOS holds *OBS* responsible for that access, and
+OBS.app's own `Info.plist` has no Bluetooth usage description — so instead
+of prompting, macOS hard-crashes the process (you'll see `Responsible: OBS`
+and `Namespace TCC` in the crash report if this happens). `VitalSignBridge.app`
+is a minimal wrapper (tracked in this repo) with its own `Info.plist`
+declaring Bluetooth usage; launching it via `open -a` makes it its own
+independent process as far as macOS's privacy system is concerned, so its
+own permission is what gets checked instead of OBS's. It just execs
+`start_bridge.sh` — see `VitalSignBridge.app/Contents/MacOS/VitalSignBridge`.
+Confirmed working end-to-end against a real running OBS instance (BLE
+connect + the actual overlay browser source both came up clean).
+
+**macOS Else Action (stop)** — `stop_bridge.sh` directly, full path, no
+wrapper needed (stopping never touches Bluetooth, so TCC doesn't care who's
+responsible for it).
+
+**Linux path**: the full path to `start_bridge.sh`/`stop_bridge.sh`, no
+arguments needed — the shebang line makes them directly executable, and
+Linux doesn't have anything equivalent to the macOS TCC issue above.
 
 **Windows path**: `.ps1` files aren't directly executable the way `.sh`
 files are (no shebang-equivalent, and PowerShell's default execution policy
@@ -240,6 +265,19 @@ connection attempt happened at all.
   `bridge.out.log` too — Start-Process splits stdout/stderr into separate
   files there, and both get overwritten (not appended) on every start,
   unlike the `.sh` scripts.
+- **(macOS) OBS/Python crashes with a "Namespace TCC" / privacy error
+  mentioning `NSBluetoothAlwaysUsageDescription` and `Responsible: OBS`**:
+  you've pointed Advanced Scene Switcher's Action directly at
+  `start_bridge.sh` instead of the `VitalSignBridge.app` wrapper — see the
+  macOS Action instructions above for why that specific combination
+  (OBS as parent, no wrapper) always crashes on Bluetooth access, and isn't
+  something a code fix on our end can work around.
+- **Overlay shows "Bridge offline" specifically inside OBS, but a plain
+  browser tab pointed at the same `overlay.html` connects fine**: check
+  `bridge.log` for `InvalidOrigin` — OBS's embedded browser can send a
+  different `Origin` header for local-file sources than a regular browser
+  does (this happened once already; see the `ALLOWED_ORIGINS` comment in
+  `bridge.py`). Add whatever origin shows up in the rejection to that list.
 
 ## Customizing the overlay
 
@@ -254,11 +292,14 @@ just refresh the OBS browser source after saving.
   internet. There's no cloud service, account, or API key involved anywhere
   in this project.
 - **The WebSocket also checks the `Origin` header**, restricted to what
-  `overlay.html` actually sends when loaded as a local file (`Origin: null`)
-  plus no-Origin-header clients (plain scripts/CLI tools). This stops an
-  unrelated webpage open in a regular browser tab from quietly opening a
-  WebSocket to this port and reading your live vitals in the background —
-  see the `ALLOWED_ORIGINS` comment in `bridge.py`.
+  `overlay.html` actually sends when loaded as a local file — both `null`
+  (what a generic browser sends for `file://`) and `http://absolute` (what
+  OBS's embedded browser sends for local-file browser sources specifically
+  — confirmed against a real running OBS instance) — plus no-Origin-header
+  clients (plain scripts/CLI tools). This stops an unrelated webpage open in
+  a regular browser tab from quietly opening a WebSocket to this port and
+  reading your live vitals in the background — see the `ALLOWED_ORIGINS`
+  comment in `bridge.py`.
 - **What's excluded from git** (see `.gitignore`): `config.sh`/`config.ps1`
   (contain your ring's BLE address — a device identifier, not a secret, but
   no reason to publish it), `bridge.log`/`bridge.out.log` (may contain
