@@ -136,7 +136,12 @@ In OBS: **Sources → + → Browser Source**
 
 - Check **Local file**, point it at the full path to `overlay.html` in
   wherever you cloned this repo
-- Width/height: `400x120` is a reasonable starting box; resize freely
+- Width/height: **`600x140`** as a starting box — measured, the panel's
+  natural width is ~485px at typical 2-digit readings and ~525px at the
+  worst case (3-digit HR + a severity marker), so `600` leaves real margin.
+  A narrower box won't clip the heart/HR (the layout is left-anchored,
+  see "Customizing the overlay" below) but will start cutting into the
+  SpO2 side, so don't go much below this unless you also shrink the fonts.
 - Check **Shutdown source when not visible** OFF (so it keeps its WebSocket
   connection warm across scene switches)
 - The background is transparent — no chroma key needed
@@ -284,6 +289,13 @@ connection attempt happened at all.
 `overlay.html` is a single file — edit the CSS variables at the top
 (`--hr-color`, `--spo2-good/warn/bad`) or the layout directly. No build step;
 just refresh the OBS browser source after saving.
+
+The panel is left-anchored (`body { justify-content: flex-start }`), not
+centered, on purpose: if the box you set is narrower than the panel's
+natural content width, overflow only clips the right (SpO2) side, never
+the heart/HR. Don't change this back to `center` without checking a
+narrow box afterward — see the git history on this line for what
+happened last time (real vitals sitting at 92% is what surfaced it).
 
 ## Security & privacy
 

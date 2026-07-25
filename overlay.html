@@ -36,7 +36,16 @@
   body {
     display: flex;
     align-items: center;
-    justify-content: center;
+    /* flex-start, not center: if the panel's natural content (heart + both
+       numbers) is ever wider than the OBS Browser Source box you picked,
+       overflow only clips the low-priority right side (the "SpO2" unit
+       label). "center" clipped the heart too -- confirmed the panel's
+       natural width (~485-525px depending on digit count) exceeds a
+       400px box, and different browser engines split that overflow
+       differently: recent desktop Chrome safely falls back to flush-left,
+       but OBS's embedded CEF browser clipped both edges symmetrically,
+       cutting into the heart. flex-start is deterministic across engines. */
+    justify-content: flex-start;
     height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
