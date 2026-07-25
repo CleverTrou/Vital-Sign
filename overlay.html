@@ -92,18 +92,15 @@
     font-variant-numeric: tabular-nums;
     transition: color 0.3s ease;
   }
-  /* Color-coded severity below is a convenience, not the only signal --
-     applyReading() also adds a text marker and toggles .spo2-warn/.spo2-bad
-     (bold + underline) so the state doesn't depend on color perception. */
-  .spo2-value.spo2-warn,
-  .spo2-value.spo2-bad {
-    font-weight: 800;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-  }
+  /* Color-coded severity is a convenience, not the only signal -- the
+     marker span below carries the same information as a shape, so it
+     doesn't depend on color perception (WCAG 1.4.1). Sized/positioned as
+     a small badge rather than inline text so it reads as an indicator,
+     not as more digits glued onto the number. */
   .spo2-marker {
-    font-size: 22px;
-    margin-left: 2px;
+    font-size: 20px;
+    font-weight: 700;
+    margin-left: 3px;
     vertical-align: super;
   }
 
@@ -141,7 +138,7 @@
     </div>
     <div class="divider" aria-hidden="true"></div>
     <div class="metric" role="group" aria-label="Blood oxygen saturation">
-      <span class="spo2-value" id="spo2Value" aria-live="polite">--</span>
+      <span class="spo2-value" id="spo2Value" aria-live="polite"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker"></span></span>
       <span class="unit">SpO&#8322;</span>
     </div>
   </div>
@@ -156,6 +153,8 @@
   const hrValue = document.getElementById("hrValue");
   const hrIcon = document.getElementById("hrIcon");
   const spo2Value = document.getElementById("spo2Value");
+  const spo2Number = document.getElementById("spo2Number");
+  const spo2Marker = document.getElementById("spo2Marker");
   const statusEl = document.getElementById("status");
 
   // If no message arrives for this long, treat the data as stale (ring
@@ -188,9 +187,9 @@
   // viewers and for anyone glancing at a compressed stream where the color
   // channel is the first thing to degrade.
   function spo2Severity(spo2) {
-    if (spo2 >= 95) return { css: "var(--spo2-good)", cls: null, marker: "" };
-    if (spo2 >= 90) return { css: "var(--spo2-warn)", cls: "spo2-warn", marker: "▲" };
-    return { css: "var(--spo2-bad)", cls: "spo2-bad", marker: "⚠" };
+    if (spo2 >= 95) return { css: "var(--spo2-good)", marker: "" };
+    if (spo2 >= 90) return { css: "var(--spo2-warn)", marker: "▲" };
+    return { css: "var(--spo2-bad)", marker: "⚠︎" }; // ︎: force plain-text glyph, not the colored emoji variant
   }
 
   function applyReading(msg) {
@@ -199,13 +198,15 @@
     if (!msg.worn) {
       setStatus("Not worn");
       hrValue.textContent = "--";
-      spo2Value.textContent = "--";
+      spo2Number.textContent = "--";
+      spo2Marker.textContent = "";
       return;
     }
     if (msg.calibrating) {
       setStatus("Calibrating…");
       hrValue.textContent = "--";
-      spo2Value.textContent = "--";
+      spo2Number.textContent = "--";
+      spo2Marker.textContent = "";
       return;
     }
 
@@ -213,10 +214,9 @@
     hrValue.textContent = msg.hr;
 
     const severity = spo2Severity(msg.spo2);
-    spo2Value.textContent = msg.spo2 + "%" + (severity.marker ? " " + severity.marker : "");
-    spo2Value.style.color = severity.css;
-    spo2Value.classList.toggle("spo2-warn", severity.cls === "spo2-warn");
-    spo2Value.classList.toggle("spo2-bad", severity.cls === "spo2-bad");
+    spo2Number.textContent = msg.spo2 + "%";
+    spo2Marker.textContent = severity.marker;
+    spo2Value.style.color = severity.css; // inherited by both child spans
 
     if (msg.hr > 0) {
       hrIcon.style.animationDuration = (60 / msg.hr) + "s";

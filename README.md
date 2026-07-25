@@ -316,9 +316,9 @@ just refresh the OBS browser source after saving.
 ## Accessibility
 
 `overlay.html` doesn't rely on color alone to signal SpO2 severity — low
-readings get a text/symbol marker (▲/⚠) and a bold+underline style in
-addition to the color change, so the state is legible without color
-perception. The heartbeat pulse animation respects
+readings get a small ▲/⚠ marker badge next to the number, in addition to
+the color change, so the state is legible without color perception. The
+heartbeat pulse animation respects
 `prefers-reduced-motion`. `aria-live` regions and labels are included for
 the (secondary) case of opening the file directly in a browser tab rather
 than through OBS, which renders to video and isn't accessible to assistive
