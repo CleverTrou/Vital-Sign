@@ -254,11 +254,22 @@
   const TREND_WINDOW_MS = 5 * 60 * 1000;
   const hrHistory = []; // [{t: epoch ms, hr: number}, ...] oldest first
 
+  // Shared by recordHr (called on every new reading) and drawTrend (also
+  // called on its own every 5s via setInterval, to age the window even
+  // when no new readings are arriving -- e.g. ring off/bridge offline).
+  // Both paths need to prune against the *current* time: pruning only in
+  // recordHr would leave stale points sitting in hrHistory forever once
+  // readings stop, and their x-positions (computed relative to "now")
+  // would drift to increasingly wrong places instead of sliding off.
+  function pruneHistory(now) {
+    const cutoff = now - TREND_WINDOW_MS;
+    while (hrHistory.length && hrHistory[0].t < cutoff) hrHistory.shift();
+  }
+
   function recordHr(hr) {
     const now = Date.now();
     hrHistory.push({ t: now, hr });
-    const cutoff = now - TREND_WINDOW_MS;
-    while (hrHistory.length && hrHistory[0].t < cutoff) hrHistory.shift();
+    pruneHistory(now);
   }
 
   function resizeTrendViewBox() {
@@ -275,6 +286,7 @@
 
   function drawTrend() {
     if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
+    pruneHistory(Date.now());
     if (hrHistory.length < 2) {
       hrTrendLine.setAttribute("points", "");
       hrTrendArea.setAttribute("d", "");

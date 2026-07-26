@@ -370,9 +370,11 @@ happened last time (real vitals sitting at 92% is what surfaced it).
 
 To remove the BPM trend graph entirely: delete the `.trend-row` div from
 the HTML and the `resizeTrendViewBox()`/`setInterval(drawTrend, ...)` calls
-near the bottom of the script — `recordHr`/`drawTrend` calls inside
-`applyReading` are harmless no-ops without the DOM elements they target,
-but there's no reason to leave the dead calls in if you're not using it.
+near the bottom of the script. `drawTrend`/`resizeTrendViewBox` have no
+visible effect without the DOM elements they target (they return early),
+and `recordHr` keeps recording into memory regardless either way — both
+are harmless left in place, but there's no reason to leave the dead calls
+in if you're not using the graph.
 To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
 
 ## Security & privacy
