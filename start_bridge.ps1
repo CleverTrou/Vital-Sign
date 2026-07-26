@@ -39,9 +39,45 @@ $LogFile = Join-Path $Dir "bridge.log"
 $OutLogFile = Join-Path $Dir "bridge.out.log"
 $PythonExe = Join-Path $Dir ".venv\Scripts\python.exe"
 
+# Confirms a PID is actually still our bridge.py, not some unrelated
+# process that happened to reuse the number after the original exited --
+# Get-Process alone can't see the command line, so this goes through WMI.
+#
+# Checks two WMI properties together rather than one path match, because
+# neither alone is both safe and correct:
+#   - CommandLine preserves arguments exactly as passed to Start-Process
+#     below, which is the *relative* "bridge.py" (see the -ArgumentList
+#     comment) -- so matching CommandLine against the *absolute* bridge.py
+#     path (an earlier version of this check) can never match a real,
+#     legitimately-running instance at all. Matching CommandLine against
+#     just the bare "bridge.py" substring, on its own, is too loose --
+#     any unrelated bridge.py elsewhere on the system would also satisfy
+#     it (confirmed on macOS's bash equivalent via a decoy bridge.py in
+#     another directory).
+#   - ExecutablePath is the resolved, absolute path to the binary that was
+#     actually launched (unlike CommandLine's arguments, this isn't
+#     preserved "as typed") -- reliable here since Windows venvs copy
+#     python.exe rather than symlink it (macOS's bash equivalent can't use
+#     the analogous check for exactly that reason: `ps` there shows a venv
+#     symlink's *resolved* target, not the invoked path).
+# Together: only a python.exe from *this* venv, invoked with "bridge.py"
+# somewhere in its arguments, counts -- specific enough without needing to
+# risk passing an absolute, possibly space-containing path as a
+# Start-Process argument.
+function Test-IsBridgeProcess([int]$ProcessId) {
+    $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    if (-not $wmiProc) { return $false }
+    return $wmiProc.ExecutablePath -and $wmiProc.ExecutablePath -ieq $PythonExe -and $wmiProc.CommandLine -like "*bridge.py*"
+}
+
 if (Test-Path $PidFile) {
-    $existingPidText = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($existingPidText -and (Get-Process -Id ([int]$existingPidText) -ErrorAction SilentlyContinue)) {
+    # -Raw + TryParse rather than a direct [int] cast: a corrupted or
+    # multi-line pidfile (e.g. from a crash mid-write) would otherwise throw
+    # here (fatal, given $ErrorActionPreference = "Stop") instead of just
+    # being treated as stale.
+    $existingPidRaw = Get-Content $PidFile -Raw -ErrorAction SilentlyContinue
+    $existingPid = 0
+    if ($existingPidRaw -and [int]::TryParse($existingPidRaw.Trim(), [ref]$existingPid) -and (Test-IsBridgeProcess $existingPid)) {
         exit 0  # already running
     }
     Remove-Item $PidFile -ErrorAction SilentlyContinue

@@ -176,14 +176,35 @@ whichever condition actually matches when you want the ring connected:
 
 **Install:**
 
-- macOS: download the `.pkg` from the
-  [releases page](https://github.com/WarmUpTill/SceneSwitcher/releases),
-  right-click it and choose *Open* to bypass Gatekeeper on an unnotarized
-  installer, and follow the prompts.
-- Windows: download the `-windows-x64-Installer.exe` from the same
-  [releases page](https://github.com/WarmUpTill/SceneSwitcher/releases), run
-  it, and click *More info → Run anyway* if SmartScreen blocks it (same
-  unnotarized-installer situation as macOS's Gatekeeper, different dialog).
+You're about to bypass a Gatekeeper/SmartScreen warning below, so verify the
+download first rather than trusting it blind — GitHub publishes a SHA256
+digest for every release asset, so you have something concrete to check
+against. Look it up with `--repo` (a bare `gh release view WarmUpTill/SceneSwitcher`
+is wrong — that treats the repo name as a *tag* and fails):
+
+```bash
+gh release view --repo WarmUpTill/SceneSwitcher --json assets --jq '.assets[] | "\(.name): \(.digest)"'
+```
+
+Then hash the exact file you downloaded and compare it against the matching
+line above (or the digest shown on the asset's own entry on the
+[releases page](https://github.com/WarmUpTill/SceneSwitcher/releases)).
+`gh release view` with no tag resolves to whatever is newest, so don't
+hardcode a version number here either — it'll drift the moment a new
+release ships. Use the literal filename you actually see in your
+downloads folder, not a wildcard (which can silently match an old
+download from a previous version instead):
+
+```bash
+shasum -a 256 ~/Downloads/advanced-scene-switcher-<version>-macos-universal.pkg      # macOS -- replace <version> with what you downloaded
+Get-FileHash "$env:USERPROFILE\Downloads\advanced-scene-switcher-<version>-windows-x64-Installer.exe" -Algorithm SHA256  # Windows -- same
+```
+
+- macOS: download the `.pkg`, right-click it and choose *Open* to bypass
+  Gatekeeper on an unnotarized installer, and follow the prompts.
+- Windows: download the `-windows-x64-Installer.exe`, run it, and click
+  *More info → Run anyway* if SmartScreen blocks it (same unnotarized-
+  installer situation as macOS's Gatekeeper, different dialog).
 
 Either way, restart OBS afterward — *Advanced Scene Switcher* will appear
 under the **Tools** menu.
@@ -194,10 +215,14 @@ under the **Tools** menu.
 2. **Condition** — pick one:
    - *Streaming/Recording (recommended)*: add a **Streaming** condition,
      state = **Stream running**. If you also want it running for local
-     recordings without streaming, add a *second*, separate macro the same
-     way but with a **Recording** condition, state = **Recording running**,
-     pointing at the same Action/Else Action below — two macros both
-     starting/stopping the same idempotent scripts is safe.
+     recordings without streaming, add a **second condition** to the *same*
+     macro — **Recording**, state = **Recording running** — and set its
+     **Logic type** to **Or**, not the default And. This matters: with two
+     *separate* macros instead (one per condition, each with its own Else
+     Action), stopping the stream while a recording is still going would
+     trigger that macro's Else Action and kill the bridge out from under the
+     still-running recording, and vice versa. One macro with an Or means the
+     Else Action (stop) only fires once *neither* is active.
    - *Scene*: add a **Scene** condition, set to the scene that contains your
      `overlay.html` browser source. Only do this instead of (not in addition
      to) the above if you specifically want it tied to one scene rather than
@@ -264,9 +289,12 @@ itself and pass the script as an argument:
 - If it has separate Path/Arguments fields: Path = `powershell.exe`,
   Arguments = `-ExecutionPolicy Bypass -File "C:\path\to\start_bridge.ps1"`
 
-`-ExecutionPolicy Bypass` only affects this one invocation — it does not
-change your system's execution policy permanently, so there's no lasting
-security trade-off from using it here.
+`-ExecutionPolicy Bypass` scopes to that single `powershell.exe` process —
+it doesn't touch your system's persistent execution policy, so there's no
+lasting change from using it here. That said, `Bypass` skips a real safety
+check (it'll run *any* script unprompted), so only point it at a script
+path you actually trust — fine for `start_bridge.ps1`/`stop_bridge.ps1` in
+your own clone of this repo, not a pattern to reuse for arbitrary scripts.
 
 Check `bridge.log` (and, on Windows, `bridge.out.log`) if the overlay
 doesn't light up after the condition triggers — it'll show whether the BLE
@@ -313,7 +341,11 @@ connection attempt happened at all.
   `bridge.log` for `InvalidOrigin` — OBS's embedded browser can send a
   different `Origin` header for local-file sources than a regular browser
   does (this happened once already; see the `ALLOWED_ORIGINS` comment in
-  `bridge.py`). Add whatever origin shows up in the rejection to that list.
+  `bridge.py`). `ALLOWED_ORIGINS` is a real access control, not just a
+  compatibility shim, so don't add a rejected origin to it reflexively —
+  confirm it's actually your own OBS instance's local-file rendering (a
+  `file://`-style or `http://absolute`-style value, not an arbitrary
+  `http(s)://` origin), and never add a wildcard.
 
 ## Customizing the overlay
 

@@ -15,6 +15,7 @@
 #   .venv\Scripts\Activate.ps1; viatom-ble --scan-interactive
 # $Address = "REPLACE_ME"
 
-# Uncomment to use a non-default WebSocket port. If you do, also update
-# WS_URL at the top of overlay.html's <script> to match.
-# $WsPort = 8765
+# Uncomment to use a non-default WebSocket port (8766 here is just an
+# example of a *different* value -- the actual default is 8765). If you
+# change it, also update WS_URL at the top of overlay.html's <script>.
+# $WsPort = 8766

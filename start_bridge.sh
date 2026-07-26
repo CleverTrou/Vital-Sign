@@ -23,11 +23,23 @@ fi
 PIDFILE="$DIR/.bridge.pid"
 LOGFILE="$DIR/bridge.log"
 
-# kill -0 just probes whether the PID is alive; it doesn't verify the PID
-# still belongs to *our* process (PIDs get reused). Good enough here since
-# nothing else on a personal machine is likely to reuse this PID within a
-# streaming session -- but worth knowing if you ever run this multi-user.
-if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+# Confirms a PID is actually still our bridge.py, not an unrelated process
+# that happened to reuse the number after the original exited -- kill -0
+# alone only proves *something* is alive at that PID. Match the full,
+# repo-specific bridge.py path, not just the bare "bridge.py" substring,
+# which any unrelated bridge.py elsewhere on the system could also satisfy
+# (confirmed by testing against a decoy bridge.py in another directory).
+# Deliberately NOT also requiring "$DIR/.venv/bin/python3" in the command:
+# macOS's `ps` shows the venv symlink's *resolved* target (the real
+# Python.framework binary), not the invoked symlink path, so that half of
+# the check could never match -- confirmed by testing.
+is_bridge_process() {
+  local cmd
+  cmd="$(ps -p "$1" -o command= -ww 2>/dev/null)" || return 1
+  [[ -n "$cmd" && "$cmd" == *"$DIR/bridge.py"* ]]
+}
+
+if [[ -f "$PIDFILE" ]] && is_bridge_process "$(cat "$PIDFILE")"; then
   exit 0  # already running
 fi
 rm -f "$PIDFILE"
