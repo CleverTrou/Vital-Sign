@@ -189,13 +189,15 @@ gh release view --repo WarmUpTill/SceneSwitcher --json assets --jq '.assets[] | 
 Then hash the exact file you downloaded and compare it against the matching
 line above (or the digest shown on the asset's own entry on the
 [releases page](https://github.com/WarmUpTill/SceneSwitcher/releases)).
-Use the literal filename, not a wildcard — if an old download from a
-previous version is still sitting in the same folder, a wildcard can
-silently match and hash the wrong file:
+`gh release view` with no tag resolves to whatever is newest, so don't
+hardcode a version number here either — it'll drift the moment a new
+release ships. Use the literal filename you actually see in your
+downloads folder, not a wildcard (which can silently match an old
+download from a previous version instead):
 
 ```bash
-shasum -a 256 ~/Downloads/advanced-scene-switcher-1.35.1-macos-universal.pkg      # macOS, adjust the version
-Get-FileHash "$env:USERPROFILE\Downloads\advanced-scene-switcher-1.35.1-windows-x64-Installer.exe" -Algorithm SHA256  # Windows, adjust the version
+shasum -a 256 ~/Downloads/advanced-scene-switcher-<version>-macos-universal.pkg      # macOS -- replace <version> with what you downloaded
+Get-FileHash "$env:USERPROFILE\Downloads\advanced-scene-switcher-<version>-windows-x64-Installer.exe" -Algorithm SHA256  # Windows -- same
 ```
 
 - macOS: download the `.pkg`, right-click it and choose *Open* to bypass

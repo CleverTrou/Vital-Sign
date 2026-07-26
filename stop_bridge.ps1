@@ -16,12 +16,16 @@ if (-not (Test-Path $PidFile)) {
     exit 0
 }
 
-$targetPidText = Get-Content $PidFile -ErrorAction SilentlyContinue
-if (-not $targetPidText) {
+# -Raw + TryParse rather than a direct [int] cast: a corrupted or
+# multi-line pidfile (e.g. from a crash mid-write) would otherwise throw
+# here (fatal, given $ErrorActionPreference = "Stop") instead of just
+# being treated as stale.
+$targetPidRaw = Get-Content $PidFile -Raw -ErrorAction SilentlyContinue
+$targetPid = 0
+if (-not $targetPidRaw -or -not [int]::TryParse($targetPidRaw.Trim(), [ref]$targetPid)) {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
     exit 0
 }
-$targetPid = [int]$targetPidText
 
 # Confirm this PID still belongs to our bridge.py before touching it --
 # PIDs get reused, and killing whatever now holds this number without
@@ -38,6 +42,20 @@ $isOurs = $wmiProc -and $wmiProc.ExecutablePath -and $wmiProc.ExecutablePath -ie
 if (-not $isOurs) {
     # Not our process -- either already gone, or the PID was reused by
     # something else. Nothing of ours to stop; safe to clear the file.
+    Remove-Item $PidFile -ErrorAction SilentlyContinue
+    exit 0
+}
+
+# Re-verify immediately before killing, comparing CreationDate against the
+# check above. Narrows -- doesn't eliminate -- the window between the
+# ownership check and Stop-Process below, during which the process could
+# theoretically exit and the PID get reused by an unrelated process before
+# Stop-Process re-resolves it by number. Fully closing that window means
+# binding to the process by object identity rather than re-resolving by
+# PID at all, which is real extra complexity for an already-vanishingly
+# small race in a single-user hobby tool; not done here.
+$recheck = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
+if (-not $recheck -or $recheck.CreationDate -ne $wmiProc.CreationDate) {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
     exit 0
 }

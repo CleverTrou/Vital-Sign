@@ -71,8 +71,13 @@ function Test-IsBridgeProcess([int]$ProcessId) {
 }
 
 if (Test-Path $PidFile) {
-    $existingPidText = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($existingPidText -and (Test-IsBridgeProcess ([int]$existingPidText))) {
+    # -Raw + TryParse rather than a direct [int] cast: a corrupted or
+    # multi-line pidfile (e.g. from a crash mid-write) would otherwise throw
+    # here (fatal, given $ErrorActionPreference = "Stop") instead of just
+    # being treated as stale.
+    $existingPidRaw = Get-Content $PidFile -Raw -ErrorAction SilentlyContinue
+    $existingPid = 0
+    if ($existingPidRaw -and [int]::TryParse($existingPidRaw.Trim(), [ref]$existingPid) -and (Test-IsBridgeProcess $existingPid)) {
         exit 0  # already running
     }
     Remove-Item $PidFile -ErrorAction SilentlyContinue
