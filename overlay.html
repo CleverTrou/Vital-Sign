@@ -45,9 +45,12 @@
      JS (see rescaleStage()) means: centering is trivially consistent (one
      positioned box, not two independently-positioned ones), and the panel
      can never clip regardless of the OBS Browser Source box size -- it
-     scales down to fit instead of overflowing, and scales up to fill a box
-     bigger than its natural size instead of leaving dead space. Replaces
-     the earlier fix for the same underlying clipping problem
+     scales down to fit instead of overflowing, and scales up to fill as
+     much of a bigger box as it can without distorting proportions (an
+     aspect-ratio mismatch between the box and the content still leaves
+     dead space on one axis -- uniform scaling can't avoid that, only
+     avoid clipping). Replaces the earlier fix for the same underlying
+     clipping problem
      (justify-content: flex-start, deliberately anchoring one edge so
      overflow only ever cut into the low-priority side) -- scaling to fit
      is strictly better since nothing overflows in the first place.
@@ -307,8 +310,10 @@
   }
 
   // Scales/centers #stage (the panel + status) to fit whatever box OBS
-  // gives it, instead of clipping if too small or leaving dead space if
-  // too big.
+  // gives it, instead of clipping if too small. Preserving proportions
+  // means an aspect-ratio mismatch between the box and the content still
+  // leaves dead space on one axis if too big -- uniform scaling avoids
+  // clipping/distortion, not dead space.
   //
   // #status is position:absolute (out of flow, so it can overhang below
   // .panel without affecting layout -- see its CSS comment), which means

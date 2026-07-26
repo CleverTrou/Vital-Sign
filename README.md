@@ -146,8 +146,11 @@ In OBS: **Sources → + → Browser Source**
 - Width/height: **`600x180`** is a reasonable starting box, but any size
   works — the whole overlay scales to fit whatever box you set (see
   "Customizing the overlay" below), so a smaller box just renders smaller
-  rather than clipping, and a bigger one fills it rather than leaving dead
-  space. Pick whatever reads well at your stream's actual resolution.
+  rather than clipping, and a bigger one scales up to fill as much of it
+  as it can without distorting proportions (an aspect ratio very
+  different from the overlay's own will still leave some dead space on
+  one axis — uniform scaling can't avoid that, only avoid clipping).
+  Pick whatever reads well at your stream's actual resolution.
 - Check **Shutdown source when not visible** OFF (so it keeps its WebSocket
   connection warm across scene switches)
 - The background is transparent — no chroma key needed
