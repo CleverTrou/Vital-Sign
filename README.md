@@ -62,6 +62,13 @@ with lower latency and no external dependency.
   beating heart icon + BPM + SpO2, with a transparent background sized for
   compositing in OBS. It fades out and shows a status line if the bridge
   disconnects or the ring comes off your finger.
+- A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
+  client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
+  keeps a rolling window of the same readings it already gets over the
+  WebSocket. A freshly (re)loaded overlay starts with an empty graph and
+  builds up over the next 5 minutes; nothing survives a reload. The window
+  length lives in one constant (`TREND_WINDOW_MS`) if you want it longer
+  or shorter.
 
 ## Setup
 
@@ -136,12 +143,13 @@ In OBS: **Sources → + → Browser Source**
 
 - Check **Local file**, point it at the full path to `overlay.html` in
   wherever you cloned this repo
-- Width/height: **`600x140`** as a starting box — measured, the panel's
-  natural width is ~485px at typical 2-digit readings and ~525px at the
-  worst case (3-digit HR + a severity marker), so `600` leaves real margin.
-  A narrower box won't clip the heart/HR (the layout is left-anchored,
-  see "Customizing the overlay" below) but will start cutting into the
-  SpO2 side, so don't go much below this unless you also shrink the fonts.
+- Width/height: **`600x180`** as a starting box — measured, the panel's
+  natural size is ~485x146px at typical 2-digit readings and ~525x146px at
+  the worst case (3-digit HR + a severity marker, with the BPM trend row
+  included), so `600x180` leaves real margin. A narrower box won't clip
+  the heart/HR (the layout is left-anchored, see "Customizing the overlay"
+  below) but will start cutting into the SpO2 side or the trend graph, so
+  don't go much below this unless you also shrink the fonts.
 - Check **Shutdown source when not visible** OFF (so it keeps its WebSocket
   connection warm across scene switches)
 - The background is transparent — no chroma key needed
@@ -360,6 +368,13 @@ the heart/HR. Don't change this back to `center` without checking a
 narrow box afterward — see the git history on this line for what
 happened last time (real vitals sitting at 92% is what surfaced it).
 
+To remove the BPM trend graph entirely: delete the `.trend-row` div from
+the HTML and the `resizeTrendViewBox()`/`setInterval(drawTrend, ...)` calls
+near the bottom of the script — `recordHr`/`drawTrend` calls inside
+`applyReading` are harmless no-ops without the DOM elements they target,
+but there's no reason to leave the dead calls in if you're not using it.
+To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
+
 ## Security & privacy
 
 - **Nothing leaves your machine.** `bridge.py` binds its WebSocket server to
@@ -397,7 +412,10 @@ heartbeat pulse animation respects
 `prefers-reduced-motion`. `aria-live` regions and labels are included for
 the (secondary) case of opening the file directly in a browser tab rather
 than through OBS, which renders to video and isn't accessible to assistive
-tech regardless of the page's own markup.
+tech regardless of the page's own markup. The BPM trend sparkline is
+`aria-hidden` — it's a supplementary view of the same number already
+announced live, and no meaningful trend can be read aloud from a shape
+usefully anyway; the current BPM value carries the information.
 
 ## Credits
 

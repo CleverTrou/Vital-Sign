@@ -51,8 +51,8 @@
   }
   .panel {
     display: flex;
-    align-items: center;
-    gap: 28px;
+    flex-direction: column;
+    gap: 10px;
     padding: 18px 32px;
     border-radius: 20px;
     background: rgba(10, 12, 16, 0.55);
@@ -64,6 +64,7 @@
      reading, so a stalled bridge/BLE link is visually obvious on stream. */
   .panel.stale { opacity: 0.35; }
 
+  .metrics-row { display: flex; align-items: center; gap: 28px; }
   .metric { display: flex; align-items: baseline; gap: 10px; }
 
   .hr-icon {
@@ -115,6 +116,32 @@
 
   .divider { width: 1px; height: 48px; background: rgba(255, 255, 255, 0.2); }
 
+  /* BPM trend sparkline -- last 5 minutes. Single series, so per the
+     dataviz style guide: reuse --hr-color rather than a new palette, no
+     legend/axis/gridlines (the big number above already labels it), 2px
+     line with a ~10% wash beneath it, one end-dot marking "now". No
+     hover/tooltip layer either -- this renders into OBS's video output,
+     which no pointer ever reaches; a hover affordance would only matter
+     for the secondary case of opening this file directly in a browser,
+     which isn't worth the complexity here. */
+  .trend-row { height: 44px; }
+  .hr-trend { width: 100%; height: 100%; display: block; overflow: visible; }
+  .hr-trend-area { fill: var(--hr-color); opacity: 0.12; stroke: none; }
+  .hr-trend-line {
+    fill: none;
+    stroke: var(--hr-color);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .hr-trend-dot {
+    fill: var(--hr-color);
+    stroke: rgb(18, 20, 24); /* approximates the panel's own surface color, since it sits under a semi-transparent+blur background rather than a flat one */
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+
   .status {
     position: absolute;
     bottom: 10px;
@@ -138,17 +165,26 @@
     OBS itself renders to video, which assistive tech can't read regardless.
   -->
   <div class="panel" id="panel">
-    <div class="metric" role="group" aria-label="Heart rate">
-      <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
-      </svg>
-      <span class="value" id="hrValue" aria-live="polite">--</span>
-      <span class="unit">bpm</span>
+    <div class="metrics-row">
+      <div class="metric" role="group" aria-label="Heart rate">
+        <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
+        </svg>
+        <span class="value" id="hrValue" aria-live="polite">--</span>
+        <span class="unit">bpm</span>
+      </div>
+      <div class="divider" aria-hidden="true"></div>
+      <div class="metric" role="group" aria-label="Blood oxygen saturation">
+        <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
+        <span class="unit">SpO&#8322;</span>
+      </div>
     </div>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="metric" role="group" aria-label="Blood oxygen saturation">
-      <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
-      <span class="unit">SpO&#8322;</span>
+    <div class="trend-row">
+      <svg class="hr-trend" id="hrTrend" aria-hidden="true" focusable="false">
+        <path class="hr-trend-area" id="hrTrendArea"></path>
+        <polyline class="hr-trend-line" id="hrTrendLine"></polyline>
+        <circle class="hr-trend-dot" id="hrTrendDot" r="4" visibility="hidden"></circle>
+      </svg>
     </div>
   </div>
   <div class="status" id="status" role="status" aria-live="polite"></div>
@@ -165,6 +201,10 @@
   const spo2Number = document.getElementById("spo2Number");
   const spo2Marker = document.getElementById("spo2Marker");
   const statusEl = document.getElementById("status");
+  const hrTrend = document.getElementById("hrTrend");
+  const hrTrendArea = document.getElementById("hrTrendArea");
+  const hrTrendLine = document.getElementById("hrTrendLine");
+  const hrTrendDot = document.getElementById("hrTrendDot");
 
   // If no message arrives for this long, treat the data as stale (ring
   // off/BLE dropped/bridge crashed) rather than keep showing a frozen
@@ -203,6 +243,82 @@
     return { css: "var(--spo2-bad)", marker: "⚠︎", label: "very low" }; // ︎: force plain-text glyph, not the colored emoji variant
   }
 
+  // BPM trend sparkline: last 5 minutes, entirely client-side. bridge.py
+  // doesn't buffer history at all -- every reading it broadcasts already
+  // reaches us over the same WebSocket, so there's nothing to add on that
+  // end; we just keep the last 5 minutes' worth of {t, hr} pairs here and
+  // redraw. A freshly (re)loaded overlay starts with an empty graph and
+  // builds up over the next 5 minutes -- no history survives a reload,
+  // which is fine for a stream overlay that's normally left running for
+  // the whole session.
+  const TREND_WINDOW_MS = 5 * 60 * 1000;
+  const hrHistory = []; // [{t: epoch ms, hr: number}, ...] oldest first
+
+  function recordHr(hr) {
+    const now = Date.now();
+    hrHistory.push({ t: now, hr });
+    const cutoff = now - TREND_WINDOW_MS;
+    while (hrHistory.length && hrHistory[0].t < cutoff) hrHistory.shift();
+  }
+
+  function resizeTrendViewBox() {
+    if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
+    // Map data straight to real pixel coordinates rather than an abstract
+    // viewBox stretched with preserveAspectRatio -- simpler, and avoids
+    // non-uniform scaling distorting the 2px stroke (vector-effect
+    // guards against that too, belt and suspenders).
+    const w = hrTrend.clientWidth || 1;
+    const h = hrTrend.clientHeight || 1;
+    hrTrend.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    drawTrend();
+  }
+
+  function drawTrend() {
+    if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
+    if (hrHistory.length < 2) {
+      hrTrendLine.setAttribute("points", "");
+      hrTrendArea.setAttribute("d", "");
+      hrTrendDot.setAttribute("visibility", "hidden");
+      return;
+    }
+
+    const w = hrTrend.clientWidth || 1;
+    const h = hrTrend.clientHeight || 1;
+    const pad = 4; // keep the line/dot from clipping at the very edge
+    const now = Date.now();
+    const oldestT = now - TREND_WINDOW_MS;
+    const hrs = hrHistory.map((p) => p.hr);
+    const minHr = Math.min(...hrs);
+    const maxHr = Math.max(...hrs);
+    // Flat readings (minHr === maxHr) would divide by zero below; treat
+    // as a small fixed range so a dead-flat trend still draws a flat
+    // line in the middle rather than NaN-ing out.
+    const range = Math.max(maxHr - minHr, 1);
+
+    const points = hrHistory.map((p) => {
+      const x = pad + ((p.t - oldestT) / TREND_WINDOW_MS) * (w - pad * 2);
+      const y = pad + (1 - (p.hr - minHr) / range) * (h - pad * 2);
+      return [x, y];
+    });
+
+    hrTrendLine.setAttribute("points", points.map(([x, y]) => `${x},${y}`).join(" "));
+
+    const [firstX] = points[0];
+    const [lastX] = points[points.length - 1];
+    const areaPath =
+      `M${firstX},${h} ` +
+      points.map(([x, y]) => `L${x},${y}`).join(" ") +
+      ` L${lastX},${h} Z`;
+    hrTrendArea.setAttribute("d", areaPath);
+
+    const [dotX, dotY] = points[points.length - 1];
+    hrTrendDot.setAttribute("cx", dotX);
+    hrTrendDot.setAttribute("cy", dotY);
+    hrTrendDot.setAttribute("visibility", "visible");
+  }
+
+  window.addEventListener("resize", resizeTrendViewBox);
+
   function applyReading(msg) {
     resetStaleTimer();
 
@@ -227,6 +343,8 @@
 
     setStatus(null);
     hrValue.textContent = msg.hr;
+    recordHr(msg.hr);
+    drawTrend();
 
     const severity = spo2Severity(msg.spo2);
     spo2Number.textContent = msg.spo2 + "%";
@@ -268,6 +386,12 @@
     ws.onerror = () => ws.close(); // triggers onclose's retry above
   }
 
+  resizeTrendViewBox(); // establish the initial viewBox before any data arrives
+  // Readings drive most redraws, but nothing else ages old points out of
+  // the 5-minute window while the ring is off/disconnected -- without
+  // this, the trend line would just freeze mid-shape instead of visibly
+  // shrinking/scrolling as it goes stale.
+  setInterval(drawTrend, 5000);
   connect();
 </script>
 </body>
