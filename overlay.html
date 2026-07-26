@@ -34,25 +34,50 @@
     overflow: hidden;
   }
   body {
-    display: flex;
-    align-items: center;
-    /* flex-start, not center: if the panel's natural content (heart + both
-       numbers) is ever wider than the OBS Browser Source box you picked,
-       overflow only clips the low-priority right side (the "SpO2" unit
-       label). "center" clipped the heart too -- confirmed the panel's
-       natural width (~485-525px depending on digit count) exceeds a
-       400px box, and different browser engines split that overflow
-       differently: recent desktop Chrome safely falls back to flush-left,
-       but OBS's embedded CEF browser clipped both edges symmetrically,
-       cutting into the heart. flex-start is deterministic across engines. */
-    justify-content: flex-start;
     height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
+  /* Wraps .panel + .status so both scale and center together as one unit.
+     #stage previously didn't exist -- .panel was centered directly and
+     .status was independently centered against the *viewport*, so the two
+     drifted apart the moment the panel stopped being centered (or, before
+     that, just looked coincidentally aligned). Scaling the whole thing via
+     JS (see rescaleStage()) means: centering is trivially consistent (one
+     positioned box, not two independently-positioned ones), and the panel
+     can never clip regardless of the OBS Browser Source box size -- it
+     scales down to fit instead of overflowing, and scales up to fill as
+     much of a bigger box as it can without distorting proportions (an
+     aspect-ratio mismatch between the box and the content still leaves
+     dead space on one axis -- uniform scaling can't avoid that, only
+     avoid clipping). Replaces the earlier fix for the same underlying
+     clipping problem
+     (justify-content: flex-start, deliberately anchoring one edge so
+     overflow only ever cut into the low-priority side) -- scaling to fit
+     is strictly better since nothing overflows in the first place.
+
+     position: absolute + an explicit JS-computed translate (not flexbox
+     centering on body + a bare `scale()` with the default center-center
+     origin) because .status is out-of-flow and hangs below .panel's own
+     box -- confirmed by testing that flex-centering body's children
+     positions/scales around .panel's own (smaller) box, not the full
+     logical extent including .status's overhang, so a naive scale still
+     let .status render outside the viewport in a height-constrained box
+     even after the *scale factor itself* was corrected to account for
+     it. rescaleStage() computes both the scale and an explicit translate
+     together so the combined .panel+.status extent ends up centered and
+     contained, not just scaled from an off-center anchor. Top/left: 0
+     with no positioned ancestor means "relative to the viewport", which
+     is what we want here. */
+  #stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+  }
   .panel {
     display: flex;
-    align-items: center;
-    gap: 28px;
+    flex-direction: column;
+    gap: 10px;
     padding: 18px 32px;
     border-radius: 20px;
     background: rgba(10, 12, 16, 0.55);
@@ -64,6 +89,7 @@
      reading, so a stalled bridge/BLE link is visually obvious on stream. */
   .panel.stale { opacity: 0.35; }
 
+  .metrics-row { display: flex; align-items: center; gap: 28px; }
   .metric { display: flex; align-items: baseline; gap: 10px; }
 
   .hr-icon {
@@ -115,9 +141,44 @@
 
   .divider { width: 1px; height: 48px; background: rgba(255, 255, 255, 0.2); }
 
+  /* BPM trend sparkline -- last 5 minutes. Single series, so per the
+     dataviz style guide: reuse --hr-color rather than a new palette, no
+     legend/axis/gridlines (the big number above already labels it), 2px
+     line with a ~10% wash beneath it, one end-dot marking "now". No
+     hover/tooltip layer either -- this renders into OBS's video output,
+     which no pointer ever reaches; a hover affordance would only matter
+     for the secondary case of opening this file directly in a browser,
+     which isn't worth the complexity here. */
+  .trend-row { height: 44px; }
+  .hr-trend { width: 100%; height: 100%; display: block; overflow: visible; }
+  .hr-trend-area { fill: var(--hr-color); opacity: 0.12; stroke: none; }
+  .hr-trend-line {
+    fill: none;
+    stroke: var(--hr-color);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    /* No vector-effect: non-scaling-stroke here (removed) -- #stage as a
+       whole now gets scaled via a CSS transform (see rescaleStage()), and
+       we want the line's weight to scale proportionally along with
+       everything else, not stay a fixed 2 screen-px regardless of how
+       big the box gets. non-scaling-stroke would fight that scale. */
+  }
+  .hr-trend-dot {
+    fill: var(--hr-color);
+    stroke: rgb(18, 20, 24); /* approximates the panel's own surface color, since it sits under a semi-transparent+blur background rather than a flat one */
+    stroke-width: 2;
+  }
+
   .status {
     position: absolute;
-    bottom: 10px;
+    /* Negative, not positive: #stage (the nearest positioned ancestor,
+       now that .status lives inside it) shrink-wraps to .panel's size --
+       .status doesn't contribute to that since it's out of flow -- so
+       "bottom: 10px" would sit 10px *up* from the stage's bottom edge,
+       overlapping the panel, rather than 10px below it. Negative pushes
+       it below the panel instead, which is the actual intent. */
+    bottom: -34px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 13px;
@@ -137,27 +198,39 @@
     this file directly in a normal browser tab (e.g. while styling it) --
     OBS itself renders to video, which assistive tech can't read regardless.
   -->
-  <div class="panel" id="panel">
-    <div class="metric" role="group" aria-label="Heart rate">
-      <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
-      </svg>
-      <span class="value" id="hrValue" aria-live="polite">--</span>
-      <span class="unit">bpm</span>
+  <div id="stage">
+    <div class="panel" id="panel">
+      <div class="metrics-row">
+        <div class="metric" role="group" aria-label="Heart rate">
+          <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
+          </svg>
+          <span class="value" id="hrValue" aria-live="polite">--</span>
+          <span class="unit">bpm</span>
+        </div>
+        <div class="divider" aria-hidden="true"></div>
+        <div class="metric" role="group" aria-label="Blood oxygen saturation">
+          <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
+          <span class="unit">SpO&#8322;</span>
+        </div>
+      </div>
+      <div class="trend-row">
+        <svg class="hr-trend" id="hrTrend" aria-hidden="true" focusable="false">
+          <path class="hr-trend-area" id="hrTrendArea"></path>
+          <polyline class="hr-trend-line" id="hrTrendLine"></polyline>
+          <circle class="hr-trend-dot" id="hrTrendDot" r="4" visibility="hidden"></circle>
+        </svg>
+      </div>
     </div>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="metric" role="group" aria-label="Blood oxygen saturation">
-      <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
-      <span class="unit">SpO&#8322;</span>
-    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
-  <div class="status" id="status" role="status" aria-live="polite"></div>
 
 <script>
   // Must match bridge.py's --ws-port / config.sh's WS_PORT (both default
   // to 8765). If you change one, change this too.
   const WS_URL = "ws://localhost:8765";
 
+  const stage = document.getElementById("stage");
   const panel = document.getElementById("panel");
   const hrValue = document.getElementById("hrValue");
   const hrIcon = document.getElementById("hrIcon");
@@ -165,6 +238,10 @@
   const spo2Number = document.getElementById("spo2Number");
   const spo2Marker = document.getElementById("spo2Marker");
   const statusEl = document.getElementById("status");
+  const hrTrend = document.getElementById("hrTrend");
+  const hrTrendArea = document.getElementById("hrTrendArea");
+  const hrTrendLine = document.getElementById("hrTrendLine");
+  const hrTrendDot = document.getElementById("hrTrendDot");
 
   // If no message arrives for this long, treat the data as stale (ring
   // off/BLE dropped/bridge crashed) rather than keep showing a frozen
@@ -203,6 +280,160 @@
     return { css: "var(--spo2-bad)", marker: "⚠︎", label: "very low" }; // ︎: force plain-text glyph, not the colored emoji variant
   }
 
+  // BPM trend sparkline: last 5 minutes, entirely client-side. bridge.py
+  // doesn't buffer history at all -- every reading it broadcasts already
+  // reaches us over the same WebSocket, so there's nothing to add on that
+  // end; we just keep the last 5 minutes' worth of {t, hr} pairs here and
+  // redraw. A freshly (re)loaded overlay starts with an empty graph and
+  // builds up over the next 5 minutes -- no history survives a reload,
+  // which is fine for a stream overlay that's normally left running for
+  // the whole session.
+  const TREND_WINDOW_MS = 5 * 60 * 1000;
+  const hrHistory = []; // [{t: epoch ms, hr: number}, ...] oldest first
+
+  // Shared by recordHr (called on every new reading) and drawTrend (also
+  // called on its own every 5s via setInterval, to age the window even
+  // when no new readings are arriving -- e.g. ring off/bridge offline).
+  // Both paths need to prune against the *current* time: pruning only in
+  // recordHr would leave stale points sitting in hrHistory forever once
+  // readings stop, and their x-positions (computed relative to "now")
+  // would drift to increasingly wrong places instead of sliding off.
+  function pruneHistory(now) {
+    const cutoff = now - TREND_WINDOW_MS;
+    while (hrHistory.length && hrHistory[0].t < cutoff) hrHistory.shift();
+  }
+
+  function recordHr(hr) {
+    const now = Date.now();
+    hrHistory.push({ t: now, hr });
+    pruneHistory(now);
+  }
+
+  // Scales/centers #stage (the panel + status) to fit whatever box OBS
+  // gives it, instead of clipping if too small. Preserving proportions
+  // means an aspect-ratio mismatch between the box and the content still
+  // leaves dead space on one axis if too big -- uniform scaling avoids
+  // clipping/distortion, not dead space.
+  //
+  // #status is position:absolute (out of flow, so it can overhang below
+  // .panel without affecting layout -- see its CSS comment), which means
+  // stage.clientWidth/clientHeight -- unaffected by transforms, but ALSO
+  // blind to out-of-flow content -- silently ignore its overhang. Confirmed
+  // by testing: in a height-constrained box, that let scale use 100% of
+  // the available height for .panel alone, pushing #status's bottom edge
+  // entirely outside the actual viewport. getBoundingClientRect *does*
+  // include out-of-flow overhang, but it reports the current *visual*
+  // (post-transform) size -- so unlike the old clientWidth/Height-only
+  // version, this one has to reset the transform before measuring and
+  // reapply it after, or it would be measuring against whatever scale was
+  // already applied instead of the natural 1x size.
+  //
+  // Computing an explicit translate here too, not just the scale: with
+  // #stage flex-centered by body and a bare `scale()` at the default
+  // center-center origin (the first version of this function), both the
+  // centering *and* the scale anchor were based on .panel's own box --
+  // not the full logical extent including .status's overhang -- so
+  // .status's distance from that off-center anchor got amplified by the
+  // scale factor and still ended up outside the viewport, even after the
+  // scale factor itself was corrected to account for the overhang.
+  // Confirmed by testing (see the git history on this function). Solving
+  // both the scale *and* the position together in one calculation, from a
+  // fixed (0, 0) origin, avoids relying on two different mechanisms
+  // (flexbox + transform-origin) implicitly agreeing on what "center"
+  // means for a box with out-of-flow content.
+  function rescaleStage() {
+    stage.style.transform = "none";
+    const stageRect = stage.getBoundingClientRect();
+    const statusRect = statusEl.getBoundingClientRect();
+    const naturalW = Math.max(stage.clientWidth, statusRect.right - stageRect.left) || 1;
+    const naturalH = Math.max(stage.clientHeight, statusRect.bottom - stageRect.top) || 1;
+    const scale = Math.min(window.innerWidth / naturalW, window.innerHeight / naturalH);
+    const offsetX = (window.innerWidth - naturalW * scale) / 2;
+    const offsetY = (window.innerHeight - naturalH * scale) / 2;
+    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+  }
+
+  // .panel's natural size changes with digit count (2 vs. 3-digit HR,
+  // SpO2 marker appearing/disappearing) -- watch it directly rather than
+  // only rescaling on window resize, so the scale factor stays correct
+  // as content changes, not just as the box does. Also watch #status
+  // itself: toggling display:none <-> block (or its text changing length
+  // between messages) changes its own size without necessarily changing
+  // .panel's -- confirmed by testing that showing "Not worn" did NOT
+  // retrigger a rescale via the .panel observer alone, since .panel's own
+  // dimensions happened not to change between that reading and the last.
+  const stageResizeObserver = new ResizeObserver(rescaleStage);
+  stageResizeObserver.observe(panel);
+  stageResizeObserver.observe(statusEl);
+  window.addEventListener("resize", rescaleStage);
+
+  function resizeTrendViewBox() {
+    if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
+    // Map data straight to real pixel coordinates rather than an abstract
+    // viewBox stretched with preserveAspectRatio -- simpler, and matches
+    // #stage's own scaling approach: one uniform transform on the outside
+    // rather than non-uniform stretching on the inside.
+    const w = hrTrend.clientWidth || 1;
+    const h = hrTrend.clientHeight || 1;
+    hrTrend.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    drawTrend();
+  }
+
+  // Same reasoning as the ResizeObserver on .panel above: hrTrend's
+  // rendered size changes whenever .metrics-row's content width changes
+  // (it stretches to match via the column-flex default), not just on
+  // window resize -- without this, the viewBox could go stale and the
+  // sparkline's horizontal proportions would be subtly off until the next
+  // window resize happened to correct it.
+  if (hrTrend) new ResizeObserver(resizeTrendViewBox).observe(hrTrend);
+
+  function drawTrend() {
+    if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
+    pruneHistory(Date.now());
+    if (hrHistory.length < 2) {
+      hrTrendLine.setAttribute("points", "");
+      hrTrendArea.setAttribute("d", "");
+      hrTrendDot.setAttribute("visibility", "hidden");
+      return;
+    }
+
+    const w = hrTrend.clientWidth || 1;
+    const h = hrTrend.clientHeight || 1;
+    const pad = 4; // keep the line/dot from clipping at the very edge
+    const now = Date.now();
+    const oldestT = now - TREND_WINDOW_MS;
+    const hrs = hrHistory.map((p) => p.hr);
+    const minHr = Math.min(...hrs);
+    const maxHr = Math.max(...hrs);
+    // Flat readings (minHr === maxHr) would divide by zero below; treat
+    // as a small fixed range so a dead-flat trend still draws a flat
+    // line in the middle rather than NaN-ing out.
+    const range = Math.max(maxHr - minHr, 1);
+
+    const points = hrHistory.map((p) => {
+      const x = pad + ((p.t - oldestT) / TREND_WINDOW_MS) * (w - pad * 2);
+      const y = pad + (1 - (p.hr - minHr) / range) * (h - pad * 2);
+      return [x, y];
+    });
+
+    hrTrendLine.setAttribute("points", points.map(([x, y]) => `${x},${y}`).join(" "));
+
+    const [firstX] = points[0];
+    const [lastX] = points[points.length - 1];
+    const areaPath =
+      `M${firstX},${h} ` +
+      points.map(([x, y]) => `L${x},${y}`).join(" ") +
+      ` L${lastX},${h} Z`;
+    hrTrendArea.setAttribute("d", areaPath);
+
+    const [dotX, dotY] = points[points.length - 1];
+    hrTrendDot.setAttribute("cx", dotX);
+    hrTrendDot.setAttribute("cy", dotY);
+    hrTrendDot.setAttribute("visibility", "visible");
+  }
+
+  window.addEventListener("resize", resizeTrendViewBox);
+
   function applyReading(msg) {
     resetStaleTimer();
 
@@ -227,6 +458,8 @@
 
     setStatus(null);
     hrValue.textContent = msg.hr;
+    recordHr(msg.hr);
+    drawTrend();
 
     const severity = spo2Severity(msg.spo2);
     spo2Number.textContent = msg.spo2 + "%";
@@ -268,6 +501,13 @@
     ws.onerror = () => ws.close(); // triggers onclose's retry above
   }
 
+  rescaleStage(); // establish the initial scale before any data arrives
+  resizeTrendViewBox(); // establish the initial viewBox before any data arrives
+  // Readings drive most redraws, but nothing else ages old points out of
+  // the 5-minute window while the ring is off/disconnected -- without
+  // this, the trend line would just freeze mid-shape instead of visibly
+  // shrinking/scrolling as it goes stale.
+  setInterval(drawTrend, 5000);
   connect();
 </script>
 </body>

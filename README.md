@@ -62,6 +62,13 @@ with lower latency and no external dependency.
   beating heart icon + BPM + SpO2, with a transparent background sized for
   compositing in OBS. It fades out and shows a status line if the bridge
   disconnects or the ring comes off your finger.
+- A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
+  client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
+  keeps a rolling window of the same readings it already gets over the
+  WebSocket. A freshly (re)loaded overlay starts with an empty graph and
+  builds up over the next 5 minutes; nothing survives a reload. The window
+  length lives in one constant (`TREND_WINDOW_MS`) if you want it longer
+  or shorter.
 
 ## Setup
 
@@ -136,12 +143,14 @@ In OBS: **Sources → + → Browser Source**
 
 - Check **Local file**, point it at the full path to `overlay.html` in
   wherever you cloned this repo
-- Width/height: **`600x140`** as a starting box — measured, the panel's
-  natural width is ~485px at typical 2-digit readings and ~525px at the
-  worst case (3-digit HR + a severity marker), so `600` leaves real margin.
-  A narrower box won't clip the heart/HR (the layout is left-anchored,
-  see "Customizing the overlay" below) but will start cutting into the
-  SpO2 side, so don't go much below this unless you also shrink the fonts.
+- Width/height: **`600x180`** is a reasonable starting box, but any size
+  works — the whole overlay scales to fit whatever box you set (see
+  "Customizing the overlay" below), so a smaller box just renders smaller
+  rather than clipping, and a bigger one scales up to fill as much of it
+  as it can without distorting proportions (an aspect ratio very
+  different from the overlay's own will still leave some dead space on
+  one axis — uniform scaling can't avoid that, only avoid clipping).
+  Pick whatever reads well at your stream's actual resolution.
 - Check **Shutdown source when not visible** OFF (so it keeps its WebSocket
   connection warm across scene switches)
 - The background is transparent — no chroma key needed
@@ -353,12 +362,43 @@ connection attempt happened at all.
 (`--hr-color`, `--spo2-good/warn/bad`) or the layout directly. No build step;
 just refresh the OBS browser source after saving.
 
-The panel is left-anchored (`body { justify-content: flex-start }`), not
-centered, on purpose: if the box you set is narrower than the panel's
-natural content width, overflow only clips the right (SpO2) side, never
-the heart/HR. Don't change this back to `center` without checking a
-narrow box afterward — see the git history on this line for what
-happened last time (real vitals sitting at 92% is what surfaced it).
+Everything (the panel and the status pill) lives inside `#stage`, which
+`rescaleStage()` scales and centers as one unit to fit whatever OBS
+Browser Source box you set — computed as `min(window width / stage's
+natural width, window height / stage's natural height)`, so it shrinks to
+fit a small box and grows to fill a large one without distorting
+proportions or clipping either way. "Natural size" here accounts for
+`.status`'s out-of-flow overhang below `.panel` (see its CSS comment),
+not just `.panel` itself — otherwise a height-constrained box could scale
+`.panel` to fill 100% of the available height and push the status pill
+below it entirely outside the viewport. This replaced an
+earlier fix for the same underlying clipping problem (anchoring the
+panel to one side so overflow only ever cut into the low-priority SpO2
+label, never the heart/HR — see the git history on this section if
+you're curious) — scaling to fit is strictly better since nothing
+overflows in the first place, and it fixed a second bug for free: the
+status pill used to be centered against the *viewport* independently of
+the panel, so the two drifted apart whenever the panel wasn't centered.
+`.hr-trend-line`/`.hr-trend-dot` deliberately don't use
+`vector-effect="non-scaling-stroke"` for the same reason — the line
+weight should scale up/down with everything else, not stay a fixed
+2 screen-pixels regardless of box size.
+
+If you resize the ring icon, fonts, or padding, you don't need to touch
+the scaling logic at all — `rescaleStage()` measures `#stage`'s natural
+size dynamically (via a `ResizeObserver` on both `.panel` and the status
+pill, since either one changing size can change the natural size) rather
+than assuming a fixed reference size, so it keeps working from whatever
+the CSS actually produces.
+
+To remove the BPM trend graph entirely: delete the `.trend-row` div from
+the HTML and the `resizeTrendViewBox()`/`setInterval(drawTrend, ...)` calls
+near the bottom of the script. `drawTrend`/`resizeTrendViewBox` have no
+visible effect without the DOM elements they target (they return early),
+and `recordHr` keeps recording into memory regardless either way — both
+are harmless left in place, but there's no reason to leave the dead calls
+in if you're not using the graph.
+To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
 
 ## Security & privacy
 
@@ -397,7 +437,10 @@ heartbeat pulse animation respects
 `prefers-reduced-motion`. `aria-live` regions and labels are included for
 the (secondary) case of opening the file directly in a browser tab rather
 than through OBS, which renders to video and isn't accessible to assistive
-tech regardless of the page's own markup.
+tech regardless of the page's own markup. The BPM trend sparkline is
+`aria-hidden` — it's a supplementary view of the same number already
+announced live, and no meaningful trend can be read aloud from a shape
+usefully anyway; the current BPM value carries the information.
 
 ## Credits
 
