@@ -211,10 +211,14 @@ under the **Tools** menu.
    (Advanced Scene Switcher runs the main actions while the condition is
    true and the "Else Actions" once it becomes false — so e.g. going live
    starts the bridge, ending the stream stops it.)
-5. Enable **"Run on change"** on the macro — without it, the start/stop
-   actions would fire on every condition re-check instead of once per
+5. Set **"Perform actions:"** (near the top of the macro editor) to **"only
+   when result changes"** — without it (i.e. left on "always"), the
+   start/stop actions fire on every condition re-check instead of once per
    transition. (The scripts are idempotent either way, so this mostly just
-   avoids log spam and unnecessary PID checks.)
+   avoids log spam and unnecessary PID checks.) Confirmed against the
+   installed plugin's own strings — this field has been renamed across
+   versions, so if neither label matches what you see, look for whatever
+   controls how often actions run relative to the condition's state.
 6. Check the box to enable the macro, and hit **Start** in the General tab
    if the plugin isn't already running.
 
