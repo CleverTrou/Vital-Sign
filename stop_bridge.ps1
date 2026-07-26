@@ -16,11 +16,25 @@ if (-not (Test-Path $PidFile)) {
     exit 0
 }
 
-# -Raw + TryParse rather than a direct [int] cast: a corrupted or
-# multi-line pidfile (e.g. from a crash mid-write) would otherwise throw
-# here (fatal, given $ErrorActionPreference = "Stop") instead of just
-# being treated as stale.
-$targetPidRaw = Get-Content $PidFile -Raw -ErrorAction SilentlyContinue
+# Read failures (permissions, I/O, file locked) must NOT look the same as
+# "file is empty/malformed" -- -ErrorAction SilentlyContinue would silently
+# turn a real read error into an empty string, and the code below would
+# then delete the PID file and report success without ever having
+# confirmed whether the bridge was actually stopped. Let a genuine read
+# error throw (the script's own $ErrorActionPreference = "Stop" handles
+# that) and only treat a *successful* read of empty/malformed content as
+# stale.
+try {
+    $targetPidRaw = Get-Content $PidFile -Raw -ErrorAction Stop
+} catch {
+    Write-Error "Failed to read PID file ${PidFile}: $_"
+    exit 1
+}
+
+# TryParse rather than a direct [int] cast: a corrupted or multi-line
+# pidfile (e.g. from a crash mid-write) would otherwise throw here
+# (fatal, given $ErrorActionPreference = "Stop") instead of just being
+# treated as stale.
 $targetPid = 0
 if (-not $targetPidRaw -or -not [int]::TryParse($targetPidRaw.Trim(), [ref]$targetPid)) {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
@@ -55,7 +69,11 @@ if (-not $isOurs) {
 # PID at all, which is real extra complexity for an already-vanishingly
 # small race in a single-user hobby tool; not done here.
 $recheck = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
-if (-not $recheck -or $recheck.CreationDate -ne $wmiProc.CreationDate) {
+# Explicitly require both CreationDate values to be present, not just
+# equal: PowerShell treats $null -ne $null as $false, so if the property
+# were missing on both sides this comparison would silently pass instead
+# of failing closed -- confirmed by testing.
+if (-not $recheck -or -not $wmiProc.CreationDate -or -not $recheck.CreationDate -or $recheck.CreationDate -ne $wmiProc.CreationDate) {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
     exit 0
 }
