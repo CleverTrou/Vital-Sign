@@ -143,13 +143,11 @@ In OBS: **Sources → + → Browser Source**
 
 - Check **Local file**, point it at the full path to `overlay.html` in
   wherever you cloned this repo
-- Width/height: **`600x180`** as a starting box — measured, the panel's
-  natural size is ~485x146px at typical 2-digit readings and ~525x146px at
-  the worst case (3-digit HR + a severity marker, with the BPM trend row
-  included), so `600x180` leaves real margin. A narrower box won't clip
-  the heart/HR (the layout is left-anchored, see "Customizing the overlay"
-  below) but will start cutting into the SpO2 side or the trend graph, so
-  don't go much below this unless you also shrink the fonts.
+- Width/height: **`600x180`** is a reasonable starting box, but any size
+  works — the whole overlay scales to fit whatever box you set (see
+  "Customizing the overlay" below), so a smaller box just renders smaller
+  rather than clipping, and a bigger one fills it rather than leaving dead
+  space. Pick whatever reads well at your stream's actual resolution.
 - Check **Shutdown source when not visible** OFF (so it keeps its WebSocket
   connection warm across scene switches)
 - The background is transparent — no chroma key needed
@@ -361,12 +359,29 @@ connection attempt happened at all.
 (`--hr-color`, `--spo2-good/warn/bad`) or the layout directly. No build step;
 just refresh the OBS browser source after saving.
 
-The panel is left-anchored (`body { justify-content: flex-start }`), not
-centered, on purpose: if the box you set is narrower than the panel's
-natural content width, overflow only clips the right (SpO2) side, never
-the heart/HR. Don't change this back to `center` without checking a
-narrow box afterward — see the git history on this line for what
-happened last time (real vitals sitting at 92% is what surfaced it).
+Everything (the panel and the status pill) lives inside `#stage`, which
+`rescaleStage()` scales as one unit to fit whatever OBS Browser Source
+box you set — computed as `min(window width / stage's natural width,
+window height / stage's natural height)`, so it shrinks to fit a small
+box and grows to fill a large one without distorting proportions or
+clipping either way, and stays centered on both axes. This replaced an
+earlier fix for the same underlying clipping problem (anchoring the
+panel to one side so overflow only ever cut into the low-priority SpO2
+label, never the heart/HR — see the git history on this section if
+you're curious) — scaling to fit is strictly better since nothing
+overflows in the first place, and it fixed a second bug for free: the
+status pill used to be centered against the *viewport* independently of
+the panel, so the two drifted apart whenever the panel wasn't centered.
+`.hr-trend-line`/`.hr-trend-dot` deliberately don't use
+`vector-effect="non-scaling-stroke"` for the same reason — the line
+weight should scale up/down with everything else, not stay a fixed
+2 screen-pixels regardless of box size.
+
+If you resize the ring icon, fonts, or padding, you don't need to touch
+the scaling logic at all — `rescaleStage()` measures `#stage`'s natural
+size dynamically (via a `ResizeObserver` on `.panel`) rather than
+assuming a fixed reference size, so it keeps working from whatever the
+CSS actually produces.
 
 To remove the BPM trend graph entirely: delete the `.trend-row` div from
 the HTML and the `resizeTrendViewBox()`/`setInterval(drawTrend, ...)` calls

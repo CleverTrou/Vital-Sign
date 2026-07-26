@@ -36,18 +36,29 @@
   body {
     display: flex;
     align-items: center;
-    /* flex-start, not center: if the panel's natural content (heart + both
-       numbers) is ever wider than the OBS Browser Source box you picked,
-       overflow only clips the low-priority right side (the "SpO2" unit
-       label). "center" clipped the heart too -- confirmed the panel's
-       natural width (~485-525px depending on digit count) exceeds a
-       400px box, and different browser engines split that overflow
-       differently: recent desktop Chrome safely falls back to flush-left,
-       but OBS's embedded CEF browser clipped both edges symmetrically,
-       cutting into the heart. flex-start is deterministic across engines. */
-    justify-content: flex-start;
+    justify-content: center;
     height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  /* Wraps .panel + .status so both scale and center together as one unit.
+     #stage previously didn't exist -- .panel was centered directly and
+     .status was independently centered against the *viewport*, so the two
+     drifted apart the moment the panel stopped being centered (or, before
+     that, just looked coincidentally aligned). Sizing #stage to its
+     content (only .panel participates in that -- .status is
+     absolutely-positioned/out of flow) and scaling the whole thing via JS
+     (see rescaleStage()) means: centering is trivially consistent (one
+     flex-centered box, not two independently-positioned ones), and the
+     panel can never clip regardless of the OBS Browser Source box size --
+     it scales down to fit instead of overflowing, and scales up to fill
+     a box bigger than its natural size instead of leaving dead space.
+     Replaces the earlier fix for the same underlying clipping problem
+     (justify-content: flex-start, deliberately anchoring one edge so
+     overflow only ever cut into the low-priority side) -- scaling to fit
+     is strictly better since nothing overflows in the first place. */
+  #stage {
+    position: relative;
+    transform-origin: center center;
   }
   .panel {
     display: flex;
@@ -133,18 +144,27 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
-    vector-effect: non-scaling-stroke;
+    /* No vector-effect: non-scaling-stroke here (removed) -- #stage as a
+       whole now gets scaled via a CSS transform (see rescaleStage()), and
+       we want the line's weight to scale proportionally along with
+       everything else, not stay a fixed 2 screen-px regardless of how
+       big the box gets. non-scaling-stroke would fight that scale. */
   }
   .hr-trend-dot {
     fill: var(--hr-color);
     stroke: rgb(18, 20, 24); /* approximates the panel's own surface color, since it sits under a semi-transparent+blur background rather than a flat one */
     stroke-width: 2;
-    vector-effect: non-scaling-stroke;
   }
 
   .status {
     position: absolute;
-    bottom: 10px;
+    /* Negative, not positive: #stage (the nearest positioned ancestor,
+       now that .status lives inside it) shrink-wraps to .panel's size --
+       .status doesn't contribute to that since it's out of flow -- so
+       "bottom: 10px" would sit 10px *up* from the stage's bottom edge,
+       overlapping the panel, rather than 10px below it. Negative pushes
+       it below the panel instead, which is the actual intent. */
+    bottom: -34px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 13px;
@@ -164,36 +184,39 @@
     this file directly in a normal browser tab (e.g. while styling it) --
     OBS itself renders to video, which assistive tech can't read regardless.
   -->
-  <div class="panel" id="panel">
-    <div class="metrics-row">
-      <div class="metric" role="group" aria-label="Heart rate">
-        <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
+  <div id="stage">
+    <div class="panel" id="panel">
+      <div class="metrics-row">
+        <div class="metric" role="group" aria-label="Heart rate">
+          <svg class="hr-icon" id="hrIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z"/>
+          </svg>
+          <span class="value" id="hrValue" aria-live="polite">--</span>
+          <span class="unit">bpm</span>
+        </div>
+        <div class="divider" aria-hidden="true"></div>
+        <div class="metric" role="group" aria-label="Blood oxygen saturation">
+          <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
+          <span class="unit">SpO&#8322;</span>
+        </div>
+      </div>
+      <div class="trend-row">
+        <svg class="hr-trend" id="hrTrend" aria-hidden="true" focusable="false">
+          <path class="hr-trend-area" id="hrTrendArea"></path>
+          <polyline class="hr-trend-line" id="hrTrendLine"></polyline>
+          <circle class="hr-trend-dot" id="hrTrendDot" r="4" visibility="hidden"></circle>
         </svg>
-        <span class="value" id="hrValue" aria-live="polite">--</span>
-        <span class="unit">bpm</span>
-      </div>
-      <div class="divider" aria-hidden="true"></div>
-      <div class="metric" role="group" aria-label="Blood oxygen saturation">
-        <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
-        <span class="unit">SpO&#8322;</span>
       </div>
     </div>
-    <div class="trend-row">
-      <svg class="hr-trend" id="hrTrend" aria-hidden="true" focusable="false">
-        <path class="hr-trend-area" id="hrTrendArea"></path>
-        <polyline class="hr-trend-line" id="hrTrendLine"></polyline>
-        <circle class="hr-trend-dot" id="hrTrendDot" r="4" visibility="hidden"></circle>
-      </svg>
-    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
-  <div class="status" id="status" role="status" aria-live="polite"></div>
 
 <script>
   // Must match bridge.py's --ws-port / config.sh's WS_PORT (both default
   // to 8765). If you change one, change this too.
   const WS_URL = "ws://localhost:8765";
 
+  const stage = document.getElementById("stage");
   const panel = document.getElementById("panel");
   const hrValue = document.getElementById("hrValue");
   const hrIcon = document.getElementById("hrIcon");
@@ -272,17 +295,46 @@
     pruneHistory(now);
   }
 
+  // Scales/centers #stage (the panel + status) to fit whatever box OBS
+  // gives it, instead of clipping if too small or leaving dead space if
+  // too big. clientWidth/clientHeight (not getBoundingClientRect, which
+  // reflects the *visual*, post-transform size) are unaffected by the
+  // transform this function itself applies, so there's no need to reset
+  // the transform before measuring -- they always reflect the natural,
+  // pre-scale layout size.
+  function rescaleStage() {
+    const naturalW = stage.clientWidth || 1;
+    const naturalH = stage.clientHeight || 1;
+    const scale = Math.min(window.innerWidth / naturalW, window.innerHeight / naturalH);
+    stage.style.transform = `scale(${scale})`;
+  }
+
+  // .panel's natural size changes with digit count (2 vs. 3-digit HR,
+  // SpO2 marker appearing/disappearing) -- watch it directly rather than
+  // only rescaling on window resize, so the scale factor stays correct
+  // as content changes, not just as the box does.
+  new ResizeObserver(rescaleStage).observe(panel);
+  window.addEventListener("resize", rescaleStage);
+
   function resizeTrendViewBox() {
     if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
     // Map data straight to real pixel coordinates rather than an abstract
-    // viewBox stretched with preserveAspectRatio -- simpler, and avoids
-    // non-uniform scaling distorting the 2px stroke (vector-effect
-    // guards against that too, belt and suspenders).
+    // viewBox stretched with preserveAspectRatio -- simpler, and matches
+    // #stage's own scaling approach: one uniform transform on the outside
+    // rather than non-uniform stretching on the inside.
     const w = hrTrend.clientWidth || 1;
     const h = hrTrend.clientHeight || 1;
     hrTrend.setAttribute("viewBox", `0 0 ${w} ${h}`);
     drawTrend();
   }
+
+  // Same reasoning as the ResizeObserver on .panel above: hrTrend's
+  // rendered size changes whenever .metrics-row's content width changes
+  // (it stretches to match via the column-flex default), not just on
+  // window resize -- without this, the viewBox could go stale and the
+  // sparkline's horizontal proportions would be subtly off until the next
+  // window resize happened to correct it.
+  if (hrTrend) new ResizeObserver(resizeTrendViewBox).observe(hrTrend);
 
   function drawTrend() {
     if (!hrTrend) return; // trend-row markup removed -- see "Customizing the overlay" in the README
@@ -398,6 +450,7 @@
     ws.onerror = () => ws.close(); // triggers onclose's retry above
   }
 
+  rescaleStage(); // establish the initial scale before any data arrives
   resizeTrendViewBox(); // establish the initial viewBox before any data arrives
   // Readings drive most redraws, but nothing else ages old points out of
   // the 5-minute window while the ring is off/disconnected -- without
