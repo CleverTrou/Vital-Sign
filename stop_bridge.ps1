@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PidFile = Join-Path $Dir ".bridge.pid"
+$PythonExe = Join-Path $Dir ".venv\Scripts\python.exe"
 
 if (-not (Test-Path $PidFile)) {
     exit 0
@@ -25,14 +26,14 @@ $targetPid = [int]$targetPidText
 # Confirm this PID still belongs to our bridge.py before touching it --
 # PIDs get reused, and killing whatever now holds this number without
 # checking would terminate an unrelated process. Get-Process alone can't
-# see the command line, so this goes through WMI. Match the full,
-# repo-specific bridge.py path, not just the bare "bridge.py" substring
-# (which any unrelated bridge.py elsewhere on the system could also
-# satisfy) -- see the matching note in start_bridge.ps1 for why this
-# doesn't also require the python.exe path.
-$expectedScript = Join-Path $Dir "bridge.py"
+# see the command line, so this goes through WMI. See the matching
+# Test-IsBridgeProcess comment in start_bridge.ps1 for why this checks
+# both ExecutablePath and a bare CommandLine substring, rather than
+# matching CommandLine against the absolute bridge.py path (which never
+# matches -- the script is launched with a relative argument) or the bare
+# substring alone (too loose on its own).
 $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
-$isOurs = $wmiProc -and $wmiProc.CommandLine -like "*$expectedScript*"
+$isOurs = $wmiProc -and $wmiProc.ExecutablePath -and $wmiProc.ExecutablePath -ieq $PythonExe -and $wmiProc.CommandLine -like "*bridge.py*"
 
 if (-not $isOurs) {
     # Not our process -- either already gone, or the PID was reused by
