@@ -13,6 +13,12 @@ Checkme O2 Max --BLE--> bridge.py --WebSocket--> overlay.html (OBS Browser Sourc
 > consumer-grade, not clinical-grade — don't use readings from this (or the
 > ring) to make health decisions.
 
+![Overlay showing heart rate, SpO2, and a 5-minute BPM trend graph](docs/preview.png)
+
+*Mockup with simulated readings, shown against a dark background for
+contrast — `overlay.html`'s actual background is fully transparent, so in
+OBS only the panel itself is visible over your stream/game.*
+
 ## Platform support
 
 - **macOS** — **Verified** against a real Checkme O2 Max, first try, no code
