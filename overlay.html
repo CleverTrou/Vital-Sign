@@ -34,9 +34,6 @@
     overflow: hidden;
   }
   body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
@@ -44,21 +41,35 @@
      #stage previously didn't exist -- .panel was centered directly and
      .status was independently centered against the *viewport*, so the two
      drifted apart the moment the panel stopped being centered (or, before
-     that, just looked coincidentally aligned). Sizing #stage to its
-     content (only .panel participates in that -- .status is
-     absolutely-positioned/out of flow) and scaling the whole thing via JS
-     (see rescaleStage()) means: centering is trivially consistent (one
-     flex-centered box, not two independently-positioned ones), and the
-     panel can never clip regardless of the OBS Browser Source box size --
-     it scales down to fit instead of overflowing, and scales up to fill
-     a box bigger than its natural size instead of leaving dead space.
-     Replaces the earlier fix for the same underlying clipping problem
+     that, just looked coincidentally aligned). Scaling the whole thing via
+     JS (see rescaleStage()) means: centering is trivially consistent (one
+     positioned box, not two independently-positioned ones), and the panel
+     can never clip regardless of the OBS Browser Source box size -- it
+     scales down to fit instead of overflowing, and scales up to fill a box
+     bigger than its natural size instead of leaving dead space. Replaces
+     the earlier fix for the same underlying clipping problem
      (justify-content: flex-start, deliberately anchoring one edge so
      overflow only ever cut into the low-priority side) -- scaling to fit
-     is strictly better since nothing overflows in the first place. */
+     is strictly better since nothing overflows in the first place.
+
+     position: absolute + an explicit JS-computed translate (not flexbox
+     centering on body + a bare `scale()` with the default center-center
+     origin) because .status is out-of-flow and hangs below .panel's own
+     box -- confirmed by testing that flex-centering body's children
+     positions/scales around .panel's own (smaller) box, not the full
+     logical extent including .status's overhang, so a naive scale still
+     let .status render outside the viewport in a height-constrained box
+     even after the *scale factor itself* was corrected to account for
+     it. rescaleStage() computes both the scale and an explicit translate
+     together so the combined .panel+.status extent ends up centered and
+     contained, not just scaled from an off-center anchor. Top/left: 0
+     with no positioned ancestor means "relative to the viewport", which
+     is what we want here. */
   #stage {
-    position: relative;
-    transform-origin: center center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
   }
   .panel {
     display: flex;
@@ -297,23 +308,58 @@
 
   // Scales/centers #stage (the panel + status) to fit whatever box OBS
   // gives it, instead of clipping if too small or leaving dead space if
-  // too big. clientWidth/clientHeight (not getBoundingClientRect, which
-  // reflects the *visual*, post-transform size) are unaffected by the
-  // transform this function itself applies, so there's no need to reset
-  // the transform before measuring -- they always reflect the natural,
-  // pre-scale layout size.
+  // too big.
+  //
+  // #status is position:absolute (out of flow, so it can overhang below
+  // .panel without affecting layout -- see its CSS comment), which means
+  // stage.clientWidth/clientHeight -- unaffected by transforms, but ALSO
+  // blind to out-of-flow content -- silently ignore its overhang. Confirmed
+  // by testing: in a height-constrained box, that let scale use 100% of
+  // the available height for .panel alone, pushing #status's bottom edge
+  // entirely outside the actual viewport. getBoundingClientRect *does*
+  // include out-of-flow overhang, but it reports the current *visual*
+  // (post-transform) size -- so unlike the old clientWidth/Height-only
+  // version, this one has to reset the transform before measuring and
+  // reapply it after, or it would be measuring against whatever scale was
+  // already applied instead of the natural 1x size.
+  //
+  // Computing an explicit translate here too, not just the scale: with
+  // #stage flex-centered by body and a bare `scale()` at the default
+  // center-center origin (the first version of this function), both the
+  // centering *and* the scale anchor were based on .panel's own box --
+  // not the full logical extent including .status's overhang -- so
+  // .status's distance from that off-center anchor got amplified by the
+  // scale factor and still ended up outside the viewport, even after the
+  // scale factor itself was corrected to account for the overhang.
+  // Confirmed by testing (see the git history on this function). Solving
+  // both the scale *and* the position together in one calculation, from a
+  // fixed (0, 0) origin, avoids relying on two different mechanisms
+  // (flexbox + transform-origin) implicitly agreeing on what "center"
+  // means for a box with out-of-flow content.
   function rescaleStage() {
-    const naturalW = stage.clientWidth || 1;
-    const naturalH = stage.clientHeight || 1;
+    stage.style.transform = "none";
+    const stageRect = stage.getBoundingClientRect();
+    const statusRect = statusEl.getBoundingClientRect();
+    const naturalW = Math.max(stage.clientWidth, statusRect.right - stageRect.left) || 1;
+    const naturalH = Math.max(stage.clientHeight, statusRect.bottom - stageRect.top) || 1;
     const scale = Math.min(window.innerWidth / naturalW, window.innerHeight / naturalH);
-    stage.style.transform = `scale(${scale})`;
+    const offsetX = (window.innerWidth - naturalW * scale) / 2;
+    const offsetY = (window.innerHeight - naturalH * scale) / 2;
+    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
   }
 
   // .panel's natural size changes with digit count (2 vs. 3-digit HR,
   // SpO2 marker appearing/disappearing) -- watch it directly rather than
   // only rescaling on window resize, so the scale factor stays correct
-  // as content changes, not just as the box does.
-  new ResizeObserver(rescaleStage).observe(panel);
+  // as content changes, not just as the box does. Also watch #status
+  // itself: toggling display:none <-> block (or its text changing length
+  // between messages) changes its own size without necessarily changing
+  // .panel's -- confirmed by testing that showing "Not worn" did NOT
+  // retrigger a rescale via the .panel observer alone, since .panel's own
+  // dimensions happened not to change between that reading and the last.
+  const stageResizeObserver = new ResizeObserver(rescaleStage);
+  stageResizeObserver.observe(panel);
+  stageResizeObserver.observe(statusEl);
   window.addEventListener("resize", rescaleStage);
 
   function resizeTrendViewBox() {

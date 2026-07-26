@@ -360,11 +360,15 @@ connection attempt happened at all.
 just refresh the OBS browser source after saving.
 
 Everything (the panel and the status pill) lives inside `#stage`, which
-`rescaleStage()` scales as one unit to fit whatever OBS Browser Source
-box you set — computed as `min(window width / stage's natural width,
-window height / stage's natural height)`, so it shrinks to fit a small
-box and grows to fill a large one without distorting proportions or
-clipping either way, and stays centered on both axes. This replaced an
+`rescaleStage()` scales and centers as one unit to fit whatever OBS
+Browser Source box you set — computed as `min(window width / stage's
+natural width, window height / stage's natural height)`, so it shrinks to
+fit a small box and grows to fill a large one without distorting
+proportions or clipping either way. "Natural size" here accounts for
+`.status`'s out-of-flow overhang below `.panel` (see its CSS comment),
+not just `.panel` itself — otherwise a height-constrained box could scale
+`.panel` to fill 100% of the available height and push the status pill
+below it entirely outside the viewport. This replaced an
 earlier fix for the same underlying clipping problem (anchoring the
 panel to one side so overflow only ever cut into the low-priority SpO2
 label, never the heart/HR — see the git history on this section if
@@ -379,9 +383,10 @@ weight should scale up/down with everything else, not stay a fixed
 
 If you resize the ring icon, fonts, or padding, you don't need to touch
 the scaling logic at all — `rescaleStage()` measures `#stage`'s natural
-size dynamically (via a `ResizeObserver` on `.panel`) rather than
-assuming a fixed reference size, so it keeps working from whatever the
-CSS actually produces.
+size dynamically (via a `ResizeObserver` on both `.panel` and the status
+pill, since either one changing size can change the natural size) rather
+than assuming a fixed reference size, so it keeps working from whatever
+the CSS actually produces.
 
 To remove the BPM trend graph entirely: delete the `.trend-row` div from
 the HTML and the `resizeTrendViewBox()`/`setInterval(drawTrend, ...)` calls
