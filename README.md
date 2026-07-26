@@ -91,7 +91,7 @@ pip install -r requirements.txt
 
 If `Activate.ps1` refuses to run, PowerShell's default execution policy is
 blocking it — see the execution-policy note in
-[Automatic startup tied to an OBS scene](#automatic-startup-tied-to-an-obs-scene).
+[Automatic startup](#automatic-startup).
 
 ### 1. Run the bridge
 
@@ -149,13 +149,30 @@ In OBS: **Sources → + → Browser Source**
 Reload the browser source (right-click → *Interact*/*Refresh*) any time you
 restart `bridge.py`.
 
-## Automatic startup tied to an OBS scene
+## Automatic startup
 
-Stock OBS has no "run a command when this scene activates" hook, so this
-uses the free [Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/)
+Stock OBS has no "run a command when X happens" hook, so this uses the free
+[Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/)
 plugin instead of an OBS Python script — it avoids matching OBS's embedded
 Python version to a venv containing `bleak`/`websockets`, which is a common
 source of "script failed to load" errors unrelated to your actual code.
+
+Advanced Scene Switcher can trigger on more than just scene changes; pick
+whichever condition actually matches when you want the ring connected:
+
+- **Streaming/Recording condition (recommended default)** — starts the
+  bridge exactly when you go live or start recording, stops it when you
+  stop, regardless of how many scenes you have or switch between. This is
+  usually the better fit even if you *do* have multiple scenes, since you
+  typically want the ring connected for the whole stream, not just one
+  particular scene.
+- **Scene condition** — only if you specifically want the overlay/BLE
+  connection tied to one particular scene rather than the whole
+  stream/recording (e.g. it only makes sense during a "workout" scene, not
+  during a "chatting" scene). Requires an actual scene *transition* to
+  fire — if the overlay's scene is your only scene, or you never leave it,
+  this condition never triggers, since there's nothing to transition
+  from/to. Use the Streaming/Recording condition instead in that case.
 
 **Install:**
 
@@ -174,16 +191,26 @@ under the **Tools** menu.
 **Configure** (Tools → Advanced Scene Switcher → Macro tab):
 
 1. **New macro** — name it e.g. `vital-sign`.
-2. **Condition** → add a **Scene** condition, set to the scene that contains
-   your `overlay.html` browser source.
+2. **Condition** — pick one:
+   - *Streaming/Recording (recommended)*: add a **Streaming** condition,
+     state = **Stream running**. If you also want it running for local
+     recordings without streaming, add a *second*, separate macro the same
+     way but with a **Recording** condition, state = **Recording running**,
+     pointing at the same Action/Else Action below — two macros both
+     starting/stopping the same idempotent scripts is safe.
+   - *Scene*: add a **Scene** condition, set to the scene that contains your
+     `overlay.html` browser source. Only do this instead of (not in addition
+     to) the above if you specifically want it tied to one scene rather than
+     the whole stream — see the note above on why this needs an actual scene
+     transition to fire.
 3. **Action** → add a **Run** action (System category) pointing at your
    start script (see platform notes below for the exact path/arguments).
 4. **Else Action** → add a **Run** action pointing at your stop script the
    same way.
 
    (Advanced Scene Switcher runs the main actions while the condition is
-   true and the "Else Actions" once it becomes false — so switching *to*
-   the scene starts the bridge, switching *away* stops it.)
+   true and the "Else Actions" once it becomes false — so e.g. going live
+   starts the bridge, ending the stream stops it.)
 5. Enable **"Run on change"** on the macro — without it, the start/stop
    actions would fire on every condition re-check instead of once per
    transition. (The scripts are idempotent either way, so this mostly just
@@ -238,7 +265,7 @@ change your system's execution policy permanently, so there's no lasting
 security trade-off from using it here.
 
 Check `bridge.log` (and, on Windows, `bridge.out.log`) if the overlay
-doesn't light up after a scene switch — it'll show whether the BLE
+doesn't light up after the condition triggers — it'll show whether the BLE
 connection attempt happened at all.
 
 ## Troubleshooting
