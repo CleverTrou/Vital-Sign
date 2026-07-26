@@ -16,13 +16,26 @@ if (-not (Test-Path $PidFile)) {
 }
 
 $targetPidText = Get-Content $PidFile -ErrorAction SilentlyContinue
-Remove-Item $PidFile -ErrorAction SilentlyContinue
-
 if (-not $targetPidText) {
+    Remove-Item $PidFile -ErrorAction SilentlyContinue
     exit 0
 }
+$targetPid = [int]$targetPidText
 
-$proc = Get-Process -Id ([int]$targetPidText) -ErrorAction SilentlyContinue
-if ($proc) {
-    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+# Confirm this PID still belongs to our bridge.py before touching it --
+# PIDs get reused, and killing whatever now holds this number without
+# checking would terminate an unrelated process. Get-Process alone can't
+# see the command line, so this goes through WMI.
+$wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
+if ($wmiProc -and $wmiProc.CommandLine -like "*bridge.py*") {
+    Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+    # Give it a moment to actually exit before we remove the PID file below --
+    # otherwise a start_bridge.ps1 racing in right after this would have no
+    # way to tell the (still-dying) old process apart from "not running".
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 200
+    }
 }
+
+Remove-Item $PidFile -ErrorAction SilentlyContinue

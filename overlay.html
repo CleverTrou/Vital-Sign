@@ -147,7 +147,7 @@
     </div>
     <div class="divider" aria-hidden="true"></div>
     <div class="metric" role="group" aria-label="Blood oxygen saturation">
-      <span class="spo2-value" id="spo2Value" aria-live="polite"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker"></span></span>
+      <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
       <span class="unit">SpO&#8322;</span>
     </div>
   </div>
@@ -191,14 +191,16 @@
     staleTimer = setTimeout(() => markStale(true), STALE_MS);
   }
 
-  // Returns both a CSS color and a short text/symbol marker, so severity
-  // never depends on color alone (WCAG 1.4.1) -- useful for colorblind
-  // viewers and for anyone glancing at a compressed stream where the color
-  // channel is the first thing to degrade.
+  // Returns a CSS color, a short visual symbol marker, and a text label --
+  // severity never depends on color alone (WCAG 1.4.1). The marker is
+  // aria-hidden (a screen reader spelling out "triangle" or "warning sign"
+  // isn't useful), so `label` is what conveys the same severity in speech;
+  // sighted colorblind viewers get the marker, screen reader users get the
+  // label via spo2Value's aria-label.
   function spo2Severity(spo2) {
-    if (spo2 >= 95) return { css: "var(--spo2-good)", marker: "" };
-    if (spo2 >= 90) return { css: "var(--spo2-warn)", marker: "▲" };
-    return { css: "var(--spo2-bad)", marker: "⚠︎" }; // ︎: force plain-text glyph, not the colored emoji variant
+    if (spo2 >= 95) return { css: "var(--spo2-good)", marker: "", label: "normal" };
+    if (spo2 >= 90) return { css: "var(--spo2-warn)", marker: "▲", label: "low" };
+    return { css: "var(--spo2-bad)", marker: "⚠︎", label: "very low" }; // ︎: force plain-text glyph, not the colored emoji variant
   }
 
   function applyReading(msg) {
@@ -209,6 +211,8 @@
       hrValue.textContent = "--";
       spo2Number.textContent = "--";
       spo2Marker.textContent = "";
+      spo2Value.style.color = ""; // don't let "--" inherit a stale severity color from the last real reading
+      spo2Value.removeAttribute("aria-label");
       return;
     }
     if (msg.calibrating) {
@@ -216,6 +220,8 @@
       hrValue.textContent = "--";
       spo2Number.textContent = "--";
       spo2Marker.textContent = "";
+      spo2Value.style.color = "";
+      spo2Value.removeAttribute("aria-label");
       return;
     }
 
@@ -226,6 +232,7 @@
     spo2Number.textContent = msg.spo2 + "%";
     spo2Marker.textContent = severity.marker;
     spo2Value.style.color = severity.css; // inherited by both child spans
+    spo2Value.setAttribute("aria-label", `${msg.spo2} percent, ${severity.label}`);
 
     if (msg.hr > 0) {
       hrIcon.style.animationDuration = (60 / msg.hr) + "s";

@@ -23,11 +23,14 @@ fi
 PIDFILE="$DIR/.bridge.pid"
 LOGFILE="$DIR/bridge.log"
 
-# kill -0 just probes whether the PID is alive; it doesn't verify the PID
-# still belongs to *our* process (PIDs get reused). Good enough here since
-# nothing else on a personal machine is likely to reuse this PID within a
-# streaming session -- but worth knowing if you ever run this multi-user.
-if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+# Confirms a PID is actually still our bridge.py, not an unrelated process
+# that happened to reuse the number after the original exited -- kill -0
+# alone only proves *something* is alive at that PID.
+is_bridge_process() {
+  ps -p "$1" -o command= -ww 2>/dev/null | grep -q "bridge\.py"
+}
+
+if [[ -f "$PIDFILE" ]] && is_bridge_process "$(cat "$PIDFILE")"; then
   exit 0  # already running
 fi
 rm -f "$PIDFILE"

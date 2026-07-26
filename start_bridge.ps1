@@ -39,9 +39,17 @@ $LogFile = Join-Path $Dir "bridge.log"
 $OutLogFile = Join-Path $Dir "bridge.out.log"
 $PythonExe = Join-Path $Dir ".venv\Scripts\python.exe"
 
+# Confirms a PID is actually still our bridge.py, not some unrelated
+# process that happened to reuse the number after the original exited --
+# Get-Process alone can't see the command line, so this goes through WMI.
+function Test-IsBridgeProcess([int]$ProcessId) {
+    $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    return $wmiProc -and $wmiProc.CommandLine -like "*bridge.py*"
+}
+
 if (Test-Path $PidFile) {
     $existingPidText = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($existingPidText -and (Get-Process -Id ([int]$existingPidText) -ErrorAction SilentlyContinue)) {
+    if ($existingPidText -and (Test-IsBridgeProcess ([int]$existingPidText))) {
         exit 0  # already running
     }
     Remove-Item $PidFile -ErrorAction SilentlyContinue

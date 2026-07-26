@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import signal
 from collections.abc import Sequence
 
@@ -156,6 +157,13 @@ async def handler(websocket) -> None:
         log.info(f"Overlay disconnected ({len(CLIENTS)} total)")
 
 
+def _positive_finite_seconds(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive, finite number of seconds (got {raw!r})")
+    return value
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -166,7 +174,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--scan-duration",
-        type=float,
+        type=_positive_finite_seconds,
         default=10.0,
         help="Seconds to scan for a device when --address is omitted",
     )
