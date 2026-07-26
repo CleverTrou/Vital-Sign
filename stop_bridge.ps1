@@ -25,17 +25,34 @@ $targetPid = [int]$targetPidText
 # Confirm this PID still belongs to our bridge.py before touching it --
 # PIDs get reused, and killing whatever now holds this number without
 # checking would terminate an unrelated process. Get-Process alone can't
-# see the command line, so this goes through WMI.
+# see the command line, so this goes through WMI. Match the full,
+# repo-specific bridge.py path, not just the bare "bridge.py" substring
+# (which any unrelated bridge.py elsewhere on the system could also
+# satisfy) -- see the matching note in start_bridge.ps1 for why this
+# doesn't also require the python.exe path.
+$expectedScript = Join-Path $Dir "bridge.py"
 $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
-if ($wmiProc -and $wmiProc.CommandLine -like "*bridge.py*") {
-    Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
-    # Give it a moment to actually exit before we remove the PID file below --
-    # otherwise a start_bridge.ps1 racing in right after this would have no
-    # way to tell the (still-dying) old process apart from "not running".
-    for ($i = 0; $i -lt 20; $i++) {
-        if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
-        Start-Sleep -Milliseconds 200
-    }
+$isOurs = $wmiProc -and $wmiProc.CommandLine -like "*$expectedScript*"
+
+if (-not $isOurs) {
+    # Not our process -- either already gone, or the PID was reused by
+    # something else. Nothing of ours to stop; safe to clear the file.
+    Remove-Item $PidFile -ErrorAction SilentlyContinue
+    exit 0
+}
+
+Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 200
+}
+
+if (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) {
+    # Still alive after Force + ~4s -- leave the PID file in place so
+    # start_bridge.ps1 doesn't spawn a second instance while this one
+    # still holds the BLE connection and WebSocket port.
+    Write-Error "Failed to stop bridge process $targetPid"
+    exit 1
 }
 
 Remove-Item $PidFile -ErrorAction SilentlyContinue

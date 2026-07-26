@@ -178,17 +178,22 @@ whichever condition actually matches when you want the ring connected:
 
 You're about to bypass a Gatekeeper/SmartScreen warning below, so verify the
 download first rather than trusting it blind — GitHub publishes a SHA256
-digest for every release asset (visible via `gh release view WarmUpTill/SceneSwitcher`
-or on the asset's own page), so you have something concrete to check
-against:
+digest for every release asset, so you have something concrete to check
+against. Look it up with `--repo` (a bare `gh release view WarmUpTill/SceneSwitcher`
+is wrong — that treats the repo name as a *tag* and fails):
 
 ```bash
-shasum -a 256 advanced-scene-switcher-*.pkg                          # macOS
-Get-FileHash .\advanced-scene-switcher-*-Installer.exe -Algorithm SHA256  # Windows (PowerShell)
+gh release view --repo WarmUpTill/SceneSwitcher --json assets --jq '.assets[] | "\(.name): \(.digest)"'
 ```
 
-Compare the output against the digest shown for that exact asset on the
-[releases page](https://github.com/WarmUpTill/SceneSwitcher/releases).
+Then hash the exact file you downloaded and compare it against the matching
+line above (or the digest shown on the asset's own entry on the
+[releases page](https://github.com/WarmUpTill/SceneSwitcher/releases)):
+
+```bash
+shasum -a 256 ~/Downloads/advanced-scene-switcher-*-macos-universal.pkg      # macOS
+Get-FileHash "$env:USERPROFILE\Downloads\advanced-scene-switcher-*-Installer.exe" -Algorithm SHA256  # Windows
+```
 
 - macOS: download the `.pkg`, right-click it and choose *Open* to bypass
   Gatekeeper on an unnotarized installer, and follow the prompts.

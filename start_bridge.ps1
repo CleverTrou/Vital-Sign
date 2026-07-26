@@ -42,9 +42,22 @@ $PythonExe = Join-Path $Dir ".venv\Scripts\python.exe"
 # Confirms a PID is actually still our bridge.py, not some unrelated
 # process that happened to reuse the number after the original exited --
 # Get-Process alone can't see the command line, so this goes through WMI.
+# Match the full, repo-specific bridge.py path, not just the bare
+# "bridge.py" substring, which any unrelated bridge.py elsewhere on the
+# system could also satisfy (confirmed on macOS's bash equivalent by
+# testing against a decoy bridge.py in another directory). Deliberately
+# NOT also requiring $PythonExe in the command line: on macOS, `ps` shows
+# a venv symlink's *resolved* target rather than the invoked symlink path,
+# breaking an equivalent check there. Windows venvs copy python.exe rather
+# than symlink it, so this specific failure mode may not apply here --
+# but that's unverified against real Windows, so this keeps the same
+# simpler, already-proven-sufficient check on both platforms rather than
+# assume.
 function Test-IsBridgeProcess([int]$ProcessId) {
     $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
-    return $wmiProc -and $wmiProc.CommandLine -like "*bridge.py*"
+    if (-not $wmiProc) { return $false }
+    $expectedScript = Join-Path $Dir "bridge.py"
+    return $wmiProc.CommandLine -like "*$expectedScript*"
 }
 
 if (Test-Path $PidFile) {
