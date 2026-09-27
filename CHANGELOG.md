@@ -47,4 +47,4 @@ First version.
 
 [Unreleased]: https://github.com/CleverTrou/Vital-Sign/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/CleverTrou/Vital-Sign/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/CleverTrou/Vital-Sign/releases/tag/v0.1.0
+[0.1.0]: https://github.com/CleverTrou/Vital-Sign/tree/v0.1.0
