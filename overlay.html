@@ -457,29 +457,44 @@
     }
 
     setStatus(null);
-    hrValue.textContent = msg.hr;
-    recordHr(msg.hr);
-    drawTrend();
 
-    const severity = spo2Severity(msg.spo2);
-    spo2Number.textContent = msg.spo2 + "%";
-    spo2Marker.textContent = severity.marker;
-    spo2Value.style.color = severity.css; // inherited by both child spans
-    spo2Value.setAttribute("aria-label", `${msg.spo2} percent, ${severity.label}`);
-
-    if (msg.hr > 0) {
+    // Either number can be null on its own: heart-rate-only sources
+    // (chest straps, watches) have no SpO2, and with several sources each
+    // number comes from whichever one currently has it -- see
+    // vitalsign/merge.py.
+    if (msg.hr != null && msg.hr > 0) {
+      hrValue.textContent = msg.hr;
+      recordHr(msg.hr);
+      drawTrend();
       hrIcon.style.animationDuration = (60 / msg.hr) + "s";
+    } else {
+      hrValue.textContent = "--";
+    }
+
+    if (msg.spo2 != null) {
+      const severity = spo2Severity(msg.spo2);
+      spo2Number.textContent = msg.spo2 + "%";
+      spo2Marker.textContent = severity.marker;
+      spo2Value.style.color = severity.css; // inherited by both child spans
+      spo2Value.setAttribute("aria-label", `${msg.spo2} percent, ${severity.label}`);
+    } else {
+      spo2Number.textContent = "--";
+      spo2Marker.textContent = "";
+      spo2Value.style.color = "";
+      spo2Value.removeAttribute("aria-label");
     }
   }
 
   function applyState(msg) {
     if (msg.state === "connecting") {
-      setStatus("Connecting to ring…");
+      setStatus("Connecting…");
+    } else if (msg.state === "waiting") {
+      setStatus("Waiting for device…");
     } else if (msg.state === "disconnected") {
       setStatus("Disconnected");
       markStale(true);
     } else if (msg.state === "idle") {
-      setStatus("Idle");
+      setStatus("Reconnecting…");
       markStale(true);
     }
     // "connected": leave status as-is until the first reading arrives.

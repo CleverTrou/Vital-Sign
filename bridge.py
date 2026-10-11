@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""BLE bridge: Checkme O2 Max (Viatom protocol family) -> local WebSocket -> OBS overlay.
+"""Vitals bridge: Bluetooth oximeters, heart-rate sensors and watches -> local WebSocket -> OBS overlay.
 
-Connects to the pulse oximeter over Bluetooth LE using viatom-ble, and
-re-broadcasts every reading as JSON to any WebSocket clients (i.e. overlay.html
-running as an OBS Browser Source). Run this instead of pairing the ring to
-ViHealth/O2Insight_Pro -- BLE peripherals only accept one central connection
-at a time.
+Reads one or more sources (a Viatom/Wellue ring or fingertip oximeter, any
+standard Bluetooth heart-rate or pulse-oximeter device, or the Health Data
+Server watch app), merges them by priority, and re-broadcasts the result as
+JSON to any WebSocket clients (i.e. overlay.html running as an OBS Browser
+Source). Run this instead of connecting the device to its phone app -- BLE
+peripherals only accept one central connection at a time.
 """
 
 from __future__ import annotations
@@ -17,12 +18,13 @@ import json
 import logging
 import math
 import signal
-from collections.abc import Sequence
 
 import websockets
-from viatom_ble import Reading, ViatomClient, scan_devices
-from viatom_ble.protocol import SERVICE_UUID
-from viatom_ble.scanner import COMPATIBLE_NAME_PREFIXES
+
+from vitalsign import merge
+from vitalsign.hds import DEFAULT_ALLOWED_NETWORKS
+from vitalsign.protocols import HDS_DEFAULT_PORT, Vitals
+from vitalsign.sources import DEMO, HDS, SOURCE_HELP, SourceSpec, resolve_specs
 
 log = logging.getLogger("bridge")
 
@@ -30,11 +32,6 @@ log = logging.getLogger("bridge")
 # out to every open browser source (normally just one, but nothing stops
 # you from adding the overlay to multiple scenes at once).
 CLIENTS: set = set()
-
-# The most recent broadcast payload. Sent immediately to each new client on
-# connect so a freshly (re)loaded overlay doesn't sit blank until the next
-# ~2s poll tick.
-LATEST: dict = {"type": "state", "state": "idle"}
 
 # overlay.html is meant to be loaded as a local file (OBS Browser Source ->
 # "Local file"). A generic browser would send a literal Origin: null header
@@ -50,111 +47,106 @@ LATEST: dict = {"type": "state", "state": "idle"}
 ALLOWED_ORIGINS = ["null", "http://absolute", None]
 
 
-def reading_to_payload(reading: Reading) -> dict:
-    """Flatten a viatom_ble.Reading into the JSON shape overlay.html expects."""
-    return {
-        "type": "reading",
-        "spo2": reading.spo2,
-        "hr": reading.heart_rate,
-        "battery": reading.battery,
-        "movement": reading.movement,
-        "pi": reading.perfusion_index,
-        "worn": reading.worn,
-        "calibrating": reading.calibrating,
-        "ts": reading.received_at.isoformat(),
-    }
+class Hub:
+    """Merges source output and fans it out to overlay clients."""
+
+    def __init__(self, source_count: int, fresh_seconds: float) -> None:
+        self.merger = merge.Merger(source_count, fresh_seconds=fresh_seconds)
+        self.latest_state: dict = {"type": "state", "state": merge.WAITING}
+
+    def emitter(self, index: int):
+        def emit(label: str, vitals: Vitals) -> None:
+            payload = self.merger.update(index, merge.Reading(label, vitals))
+            if payload is not None:
+                self._send(payload)
+
+        return emit
+
+    def state_setter(self, index: int):
+        def set_state(state: str) -> None:
+            aggregate = self.merger.set_state(index, state)
+            if aggregate is not None:
+                log.info(f"State: {aggregate}")
+                self.latest_state = {"type": "state", "state": aggregate}
+                self._send(self.latest_state)
+
+        return set_state
+
+    def replay(self) -> list[dict]:
+        """What a newly connected overlay should see first."""
+        current = self.merger.payload()
+        return [self.latest_state] + ([current] if current else [])
+
+    def _send(self, payload: dict) -> None:
+        if CLIENTS:
+            websockets.broadcast(CLIENTS, json.dumps(payload))
 
 
-async def broadcast(payload: dict) -> None:
-    """Send payload to every connected client and remember it as LATEST.
+def build_source(spec: SourceSpec, hub: Hub, index: int, args: argparse.Namespace):
+    emit, set_state = hub.emitter(index), hub.state_setter(index)
+    if spec.kind == DEMO:
+        from vitalsign.demo import DemoSource
 
-    return_exceptions=True so one client's dead/closing socket doesn't stop
-    delivery to the others.
-    """
-    global LATEST
-    LATEST = payload
-    if not CLIENTS:
-        return
-    message = json.dumps(payload)
-    await asyncio.gather(
-        *(client.send(message) for client in list(CLIENTS)),
-        return_exceptions=True,
+        return DemoSource(emit, set_state)
+    if spec.kind == HDS:
+        from vitalsign.hds import HdsSource
+
+        return HdsSource(
+            emit,
+            set_state,
+            port=spec.port or HDS_DEFAULT_PORT,
+            allowed_networks=[*DEFAULT_ALLOWED_NETWORKS, *args.hds_allow],
+            fresh_seconds=args.fresh_seconds,
+        )
+    from vitalsign.ble import BleSource
+
+    return BleSource(
+        emit,
+        set_state,
+        kind=None if spec.kind == "auto" else spec.kind,
+        address=spec.address,
+        scan_duration=args.scan_duration,
+        read_period=args.read_period,
     )
 
 
-def _looks_like_viatom(name: str | None, service_uuids: Sequence[str]) -> bool:
-    """Stricter stand-in for viatom_ble.scanner's own name filter.
-
-    That filter checks `prefix in name.lower()` -- a substring test --
-    despite the constant being named COMPATIBLE_NAME_*PREFIXES*. In
-    practice that means "po" also matches inside "AirPods Pro", which
-    showed up as a false positive during testing the very first time an
-    AirPods case was open nearby. We reuse the library's own prefix list
-    (so it stays in sync if upstream adds a model) but apply a real
-    `.startswith()` check, plus the service-UUID fallback the library
-    documents for rings that drop their name from later advertisements.
-    """
-    if name and name.lower().startswith(COMPATIBLE_NAME_PREFIXES):
-        return True
-    return any(u.lower() == SERVICE_UUID.lower() for u in service_uuids)
-
-
-async def resolve_address(explicit_address: str | None, scan_duration: float) -> str:
-    """Return the BLE address to connect to, scanning for it if not given.
-
-    Most people own exactly one Viatom/Wellue/Checkme device, so requiring
-    a manually copy-pasted address for every setup is friction with no
-    payoff -- we can just ask Bleak who's nearby. Pinning an address (via
-    --address or config.sh/config.ps1's ADDRESS) is still supported for
-    anyone with more than one such device in range, or who wants to skip
-    the scan for a faster start.
-    """
-    if explicit_address:
-        return explicit_address
-
-    log.info(f"No --address given; scanning for a Viatom-family device ({scan_duration:.0f}s)...")
-    # name_filter=False: do our own filtering below instead of the library's,
-    # per the _looks_like_viatom docstring.
-    all_found = await scan_devices(duration=scan_duration, name_filter=False)
-    found = [
-        (device, adv)
-        for device, adv in all_found
-        if _looks_like_viatom(adv.local_name or device.name, adv.service_uuids or ())
-    ]
-
-    if not found:
-        raise RuntimeError(
-            "No Viatom/Wellue/Checkme device found. Make sure the ring is worn/awake "
-            "and not already connected to ViHealth/O2Insight_Pro (BLE only allows one "
-            "connection at a time), then try again -- or pass --address explicitly."
-        )
-
-    if len(found) > 1:
-        listing = "\n".join(
-            f"  - {adv.local_name or device.name or '<unnamed>':<24} {device.address}  RSSI={adv.rssi}"
-            for device, adv in found
-        )
-        raise RuntimeError(
-            f"Multiple matching devices found; pin one explicitly with --address "
-            f"(or ADDRESS in config.sh/config.ps1):\n{listing}"
-        )
-
-    device, adv = found[0]
-    log.info(f"Found {adv.local_name or device.name or '<unnamed>'} at {device.address}")
-    return device.address
-
-
-async def handler(websocket) -> None:
-    """Per-connection handler: register, replay the last known state, idle."""
-    CLIENTS.add(websocket)
-    log.info(f"Overlay connected ({len(CLIENTS)} total)")
+async def run_source(spec: SourceSpec, source, set_state) -> None:
+    """Run one source; a failing source is logged, not fatal to the others."""
     try:
-        await websocket.send(json.dumps(LATEST))
-        async for _ in websocket:
-            pass  # overlay.html never sends anything; just keep the socket open
-    finally:
-        CLIENTS.discard(websocket)
-        log.info(f"Overlay disconnected ({len(CLIENTS)} total)")
+        await source.run()
+    except asyncio.CancelledError:
+        raise
+    except OSError as e:
+        log.error(f"Source {spec} stopped: {e}")
+    except Exception:
+        log.exception(f"Source {spec} crashed")
+    # Sources run until cancelled, so getting here means this one is gone;
+    # don't leave its last state (e.g. "waiting") standing in the overlay.
+    set_state(merge.DISCONNECTED)
+
+
+async def list_devices(scan_duration: float) -> None:
+    from vitalsign.ble import KIND_DESCRIPTIONS, VIATOM_FAMILY, probe, scan
+
+    print(f"Scanning {scan_duration:.0f}s for supported Bluetooth devices...")
+    found = await scan(scan_duration)
+    if not found:
+        print("None found. Make sure the device is on/worn and not connected to its phone app.")
+        return
+    for f in found:
+        kind = f.kind
+        if kind == VIATOM_FAMILY:
+            # The advertisement can't tell the ring generations apart;
+            # connecting briefly to look at its services can.
+            try:
+                kind = await probe(f.address) or kind
+            except Exception as e:  # noqa: BLE001 -- report and keep listing
+                print(f"  ({f.label}: couldn't connect to identify it: {e})")
+        # An unidentified Viatom device still works as auto:ADDRESS, which
+        # identifies it when the bridge connects.
+        shown = "auto" if kind == VIATOM_FAMILY else kind
+        print(f"  {f.label:<24} --source {shown}:{f.address}   RSSI={f.rssi}")
+        print(f"  {'':<24} {KIND_DESCRIPTIONS[kind]}")
 
 
 def _positive_finite_seconds(raw: str) -> float:
@@ -164,59 +156,105 @@ def _positive_finite_seconds(raw: str) -> float:
     return value
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog="SOURCE values:\n" + SOURCE_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        metavar="SOURCE",
+        help="Where readings come from; repeat to add fallbacks (see SOURCE values below). Default: auto",
+    )
     parser.add_argument(
         "--address",
         default=None,
-        help="BLE address (Linux/Windows) or CoreBluetooth UUID (macOS). Omit to "
-        "auto-discover -- fine as long as exactly one compatible device is in range.",
+        help="Shorthand for --source auto:ADDRESS. BLE address (Linux/Windows) or "
+        "CoreBluetooth UUID (macOS).",
+    )
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="Scan once, print every supported device in range with the --source value for it, and exit",
     )
     parser.add_argument(
         "--scan-duration",
         type=_positive_finite_seconds,
         default=10.0,
-        help="Seconds to scan for a device when --address is omitted",
+        help="Seconds per Bluetooth discovery scan",
     )
     parser.add_argument("--ws-port", type=int, default=8765)
-    parser.add_argument("--read-period", type=float, default=2.0, help="Seconds between poll requests")
+    parser.add_argument(
+        "--read-period",
+        type=_positive_finite_seconds,
+        default=2.0,
+        help="Seconds between requests to devices that need polling",
+    )
+    parser.add_argument(
+        "--fresh-seconds",
+        type=_positive_finite_seconds,
+        default=merge.DEFAULT_FRESH_SECONDS,
+        help="How long a source's last reading counts as live before the next source takes over",
+    )
+    parser.add_argument(
+        "--hds-allow",
+        action="append",
+        default=[],
+        metavar="CIDR",
+        help="Extra network allowed to send HDS readings, beyond private/LAN/Tailscale ranges",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    try:
+        args.specs = resolve_specs(args.source, args.address)
+    except ValueError as e:
+        parser.error(str(e))
+    return args
 
+
+async def main() -> None:
+    args = parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    address = await resolve_address(args.address, args.scan_duration)
+    if args.list_devices:
+        await list_devices(args.scan_duration)
+        return
 
-    async def on_reading(reading: Reading) -> None:
-        await broadcast(reading_to_payload(reading))
+    hub = Hub(len(args.specs), args.fresh_seconds)
+    sources = [build_source(spec, hub, i, args) for i, spec in enumerate(args.specs)]
+    log.info("Sources, highest priority first: " + ", ".join(str(s) for s in args.specs))
 
-    async def on_state_change(state: str) -> None:
-        log.info(f"BLE state: {state}")
-        await broadcast({"type": "state", "state": state})
-
-    client = ViatomClient(
-        address=address,
-        read_period=args.read_period,
-        on_reading=on_reading,
-        on_state_change=on_state_change,
-    )
+    async def handler(websocket) -> None:
+        """Per-connection handler: register, replay current state, idle."""
+        CLIENTS.add(websocket)
+        log.info(f"Overlay connected ({len(CLIENTS)} total)")
+        try:
+            for payload in hub.replay():
+                await websocket.send(json.dumps(payload))
+            async for _ in websocket:
+                pass  # overlay.html never sends anything; just keep the socket open
+        except websockets.ConnectionClosed:
+            pass  # e.g. OBS dropping the browser source without a close frame
+        finally:
+            CLIENTS.discard(websocket)
+            log.info(f"Overlay disconnected ({len(CLIENTS)} total)")
 
     # Bound to localhost only -- never reachable from the network -- plus
     # the Origin allowlist above as defense in depth against other local
     # browser tabs. Heart rate/SpO2 aren't secret once they're on stream,
     # but there's no reason to let an unrelated tab read them quietly.
-    server = await websockets.serve(
-        handler,
-        "localhost",
-        args.ws_port,
-        origins=ALLOWED_ORIGINS,
-    )
+    server = await websockets.serve(handler, "localhost", args.ws_port, origins=ALLOWED_ORIGINS)
     log.info(f"Overlay WebSocket listening on ws://localhost:{args.ws_port}")
 
-    client_task = asyncio.create_task(client.run_forever())
+    tasks = [
+        asyncio.create_task(run_source(spec, src, hub.state_setter(i)))
+        for i, (spec, src) in enumerate(zip(args.specs, sources, strict=True))
+    ]
 
     # SIGTERM is how stop_bridge.sh asks us to shut down; SIGINT covers
     # Ctrl-C during a manual foreground run. loop.add_signal_handler is
@@ -234,10 +272,9 @@ async def main() -> None:
 
     await stop_event.wait()
     log.info("Shutting down...")
-    await client.stop()
-    client_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await client_task
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     server.close()
     await server.wait_closed()
 

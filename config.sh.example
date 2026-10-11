@@ -1,9 +1,10 @@
 # Optional local config for start_bridge.sh -- most people don't need this
-# file at all. bridge.py auto-discovers your ring over BLE if you don't
-# pin an address, which is fine as long as exactly one Viatom/Wellue/Checkme
-# device is in range. Copy this file to config.sh only if you want to:
+# file at all. bridge.py auto-discovers a supported device over BLE if you
+# don't configure one, which is fine as long as exactly one is in range.
+# Copy this file to config.sh only if you want to:
+#   - combine sources, e.g. a ring with an Apple Watch fallback, or
 #   - skip the ~10s discovery scan on every start (faster reconnects), or
-#   - pin a specific device because you own more than one
+#   - pin a specific device because more than one is in range
 #
 #   cp config.sh.example config.sh
 #
@@ -11,8 +12,13 @@
 # specific physical device, so it doesn't belong in a repo others might
 # fork, even though it isn't a secret in the password sense.
 #
-# Find your address/UUID with (after `pip install -r requirements.txt`):
-#   source .venv/bin/activate && viatom-ble --scan-interactive
+# Sources, highest priority first, separated by spaces -- see
+# `python3 bridge.py --help` for every option. Find your device's exact
+# value (it prints one per device in range) with:
+#   .venv/bin/python3 bridge.py --list-devices
+# SOURCES="viatom:REPLACE_ME hds"   # ring first, Apple Watch (HDS) fallback
+
+# Older single-device setting, still honored: the same as auto:ADDRESS.
 # ADDRESS="REPLACE_ME"
 
 # Uncomment to use a non-default WebSocket port (8766 here is just an
