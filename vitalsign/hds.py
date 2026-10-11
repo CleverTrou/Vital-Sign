@@ -7,10 +7,10 @@ the server address to this machine's IP and the port below. It sends
 desktop receiver, hds_desktop, accepts. No account, cloud or Pulsoid.
 
 HDS has no authentication, so anything that can reach the port could
-send readings. Two limits keep that to your own devices: only senders
+send readings. Three limits keep that to your own devices: only senders
 from private/LAN/Tailscale address ranges are accepted (see
-DEFAULT_ALLOWED_NETWORKS), and the port only ever accepts small
-heart-rate messages. It never serves your readings back to anyone; the
+DEFAULT_ALLOWED_NETWORKS); requests from web pages are refused (see
+_read_request); and the port only ever accepts small heart-rate messages. It never serves your readings back to anyone; the
 overlay still gets them only over the localhost WebSocket.
 """
 
@@ -127,14 +127,21 @@ class HdsSource:
         parts = lines[0].split(" ")
         if len(parts) != 3:
             return 400, "Bad Request", b""
-        method = parts[0]
-        if method not in ("PUT", "POST"):
+        # PUT only, as HDS sends: a browser has to ask permission (a CORS
+        # preflight, which this server never grants) before sending a
+        # cross-site PUT, but not before a plain-text POST, so accepting
+        # POST would let any web page you visit post fake readings.
+        if parts[0] != "PUT":
             return 405, "Method Not Allowed", b""
         headers = {}
         for line in lines[1:]:
             name, sep, value = line.partition(":")
             if sep:
                 headers[name.strip().lower()] = value.strip()
+        # Browsers always label cross-origin requests with Origin; the
+        # watch app is not a browser and sends none.
+        if "origin" in headers:
+            return 403, "Forbidden", b""
         if "chunked" in headers.get("transfer-encoding", "").lower():
             return 411, "Length Required", b""
         try:

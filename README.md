@@ -506,9 +506,16 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
   — see `DEFAULT_ALLOWED_NETWORKS` in [`vitalsign/hds.py`](vitalsign/hds.py)),
   so a public IPv6 address doesn't expose it to the internet. It only takes
   small heart-rate messages (anything over 4 KB is refused) and never sends
-  readings back. HDS has no authentication, so a device on your own network
-  *could* send fake heart-rate numbers to your overlay; it can't read
-  anything.
+  readings back. It refuses anything a web page could send (only `PUT`, and
+  nothing carrying a browser `Origin` header), so a site open in your
+  browser can't post fake numbers to it. HDS itself has no authentication,
+  so a device on your own network *could* send fake heart-rate numbers to
+  your overlay; it can't read anything.
+- **Auto-discovery trusts what's in range.** Bluetooth heart-rate and
+  oximeter devices aren't paired or authenticated, so with plain `auto`
+  (or `hrs` with no address) a device someone else advertises nearby could
+  be picked up. For streaming somewhere public, pin your own device with
+  `KIND:ADDRESS` (`--list-devices` prints it).
 - **The WebSocket also checks the `Origin` header**, restricted to what
   `overlay.html` actually sends when loaded as a local file — both `null`
   (what a generic browser sends for `file://`) and `http://absolute` (what

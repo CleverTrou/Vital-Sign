@@ -64,6 +64,13 @@ class HdsServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, b"HTTP/1.1 100 Continue")
         self.assertEqual(self.emitted[0][1].hr, 81)
 
+    async def test_rejects_requests_a_web_page_could_send(self):
+        # A plain-text POST needs no CORS preflight, so it must not count.
+        self.assertEqual(await self.request(method="POST"), b"HTTP/1.1 405 Method Not Allowed")
+        self.assertEqual(await self.request(extra=b"Origin: https://evil.example\r\n"), b"HTTP/1.1 403 Forbidden")
+        self.assertEqual(await self.request(extra=b"Origin: null\r\n"), b"HTTP/1.1 403 Forbidden")
+        self.assertEqual(self.emitted, [])
+
     async def test_rejects_get_and_oversize(self):
         self.assertEqual(await self.request(method="GET", body=b""), b"HTTP/1.1 405 Method Not Allowed")
         self.assertEqual(await self.request(body=b"x" * 5000), b"HTTP/1.1 413 Payload Too Large")
