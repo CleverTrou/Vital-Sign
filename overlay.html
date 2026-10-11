@@ -462,7 +462,7 @@
     // (chest straps, watches) have no SpO2, and with several sources each
     // number comes from whichever one currently has it -- see
     // vitalsign/merge.py.
-    if (msg.hr != null) {
+    if (msg.hr != null && msg.hr > 0) {
       hrValue.textContent = msg.hr;
       recordHr(msg.hr);
       drawTrend();

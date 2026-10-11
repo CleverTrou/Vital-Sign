@@ -110,7 +110,7 @@ def build_source(spec: SourceSpec, hub: Hub, index: int, args: argparse.Namespac
     )
 
 
-async def run_source(spec: SourceSpec, source) -> None:
+async def run_source(spec: SourceSpec, source, set_state) -> None:
     """Run one source; a failing source is logged, not fatal to the others."""
     try:
         await source.run()
@@ -120,6 +120,9 @@ async def run_source(spec: SourceSpec, source) -> None:
         log.error(f"Source {spec} stopped: {e}")
     except Exception:
         log.exception(f"Source {spec} crashed")
+    # Sources run until cancelled, so getting here means this one is gone;
+    # don't leave its last state (e.g. "waiting") standing in the overlay.
+    set_state(merge.DISCONNECTED)
 
 
 async def list_devices(scan_duration: float) -> None:
@@ -248,7 +251,10 @@ async def main() -> None:
     server = await websockets.serve(handler, "localhost", args.ws_port, origins=ALLOWED_ORIGINS)
     log.info(f"Overlay WebSocket listening on ws://localhost:{args.ws_port}")
 
-    tasks = [asyncio.create_task(run_source(spec, src)) for spec, src in zip(args.specs, sources)]
+    tasks = [
+        asyncio.create_task(run_source(spec, src, hub.state_setter(i)))
+        for i, (spec, src) in enumerate(zip(args.specs, sources, strict=True))
+    ]
 
     # SIGTERM is how stop_bridge.sh asks us to shut down; SIGINT covers
     # Ctrl-C during a manual foreground run. loop.add_signal_handler is

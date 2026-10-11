@@ -271,6 +271,8 @@ class OxyIISessionTest(unittest.IsolatedAsyncioTestCase):
         client.notify(HRS_MEASUREMENT_UUID, [0x00, 59])
         await h.until(lambda: h.emitted)
         self.assertEqual((h.emitted[0].hr, h.emitted[0].spo2), (59, None))
+        # Heart-rate silence after the fallback must not count as a stall.
+        self.assertIsNone(h.session.stall_seconds)
         await stop(task)
 
     async def test_rests_after_inactivity(self):

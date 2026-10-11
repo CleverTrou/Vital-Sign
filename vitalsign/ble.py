@@ -432,6 +432,10 @@ class OxyIISession(BleSession):
 
     async def _fall_back_to_hrs(self, client: BleakClient) -> None:
         self._fallback = True
+        # Heart-rate notifications are pushed, and go quiet legitimately
+        # while the ring can't sense a finger (see BleSession.stall_seconds).
+        self.stall_seconds = None
+        self._last_rx = self._clock()
         if client.services.get_service(HRS_SERVICE_UUID) is None:
             raise WrongProtocol(f"{self.address}: ring didn't answer live-value requests and has no heart-rate service")
         log.warning(
