@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- More devices: second-generation Viatom rings such as the O2Ring S, PC-60FW
+  fingertip oximeters, and any Bluetooth heart-rate strap, watch or pulse
+  oximeter that uses the standard services. `--list-devices` shows what's in
+  range and the exact `--source` value for each.
+- Apple Watch heart rate without Pulsoid, two ways: the Health Data Server
+  watch app sends it straight to the bridge over your network
+  (`--source hds`), or an iPhone relay app makes the watch look like a
+  Bluetooth heart-rate strap (`--source hrs`).
+- Fallbacks: give `--source` more than once and each number comes from the
+  first source with a live reading. With `--source viatom --source hds`, the
+  watch's heart rate takes over when the ring is off. `SOURCES` in
+  `config.sh`/`config.ps1` does the same for the start scripts.
+- `--source demo` shows simulated readings for setting up the overlay
+  without hardware.
+
+### Changed
+
+- The overlay shows `--` for SpO₂ when the current source only measures
+  heart rate, and its status messages no longer assume a ring.
+- With no `--source`, the bridge keeps scanning until a device shows up
+  instead of exiting. If several are in range, it lists them and waits
+  for you to pick one.
+- Requires Python 3.11 or newer.
+
 ## [0.2.0] - 2026-07-26
 
 ### Added

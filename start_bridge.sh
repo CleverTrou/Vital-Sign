@@ -10,9 +10,10 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-# config.sh is entirely optional -- bridge.py auto-discovers the ring over
-# BLE if ADDRESS is unset, so most people never need this file. Only
-# source it if it exists.
+# config.sh is entirely optional -- bridge.py auto-discovers a supported
+# device over BLE if neither SOURCES nor ADDRESS is set, so most people
+# never need this file. Only source it if it exists.
+SOURCES=""
 ADDRESS=""
 WS_PORT="8765"
 if [[ -f "$DIR/config.sh" ]]; then
@@ -45,6 +46,10 @@ fi
 rm -f "$PIDFILE"
 
 ARGS=(--ws-port "$WS_PORT")
+# Space-separated --source values, highest priority first.
+for source in $SOURCES; do
+  ARGS+=(--source "$source")
+done
 if [[ -n "$ADDRESS" ]]; then
   ARGS+=(--address "$ADDRESS")
 fi

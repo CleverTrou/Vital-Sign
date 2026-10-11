@@ -24,9 +24,10 @@ $ErrorActionPreference = "Stop"
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Dir
 
-# config.ps1 is entirely optional -- bridge.py auto-discovers the ring over
-# BLE if $Address is unset, so most people never need this file. Only dot
-# source it if it exists.
+# config.ps1 is entirely optional -- bridge.py auto-discovers a supported
+# device over BLE if neither $Sources nor $Address is set, so most people
+# never need this file. Only dot source it if it exists.
+$Sources = @()
 $Address = $null
 $WsPort = 8765
 $ConfigPath = Join-Path $Dir "config.ps1"
@@ -90,6 +91,10 @@ if (Test-Path $PidFile) {
 # Not a concern for the fixed flags below or a BLE address/UUID (neither
 # format contains spaces), but keep it in mind if you add your own args.
 $ArgList = @("bridge.py", "--ws-port", $WsPort)
+# --source values, highest priority first.
+foreach ($Source in $Sources) {
+    $ArgList += @("--source", $Source)
+}
 if ($Address) {
     $ArgList += @("--address", $Address)
 }

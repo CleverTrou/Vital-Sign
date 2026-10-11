@@ -1,17 +1,20 @@
 # Vital Sign
 
-Live heart rate + SpO2 overlay for OBS, sourced directly from a Viatom/Wellue
-Checkme Pulse O2 Max over Bluetooth LE — no phone app, no cloud service, no
-Pulsoid account required.
+Live heart rate + SpO2 overlay for OBS, read directly from your own devices:
+Viatom/Wellue rings and fingertip oximeters, any standard Bluetooth
+heart-rate strap or pulse oximeter, and Apple Watch. No cloud service, no
+account, no Pulsoid.
 
 ```text
-Checkme O2 Max --BLE--> bridge.py --WebSocket--> overlay.html (OBS Browser Source)
+ring / oximeter / strap --BLE------\
+                                    bridge.py --WebSocket--> overlay.html (OBS Browser Source)
+Apple Watch (HDS app) --your Wi-Fi-/
 ```
 
 > This is a hobby project for putting vitals on a stream overlay, not a
-> medical device or diagnostic tool. The Checkme O2 Max itself is
-> consumer-grade, not clinical-grade — don't use readings from this (or the
-> ring) to make health decisions.
+> medical device or diagnostic tool. The devices it reads are
+> consumer-grade, not clinical-grade -- don't use readings from this to
+> make health decisions.
 
 ![Overlay showing heart rate, SpO2, and a 5-minute BPM trend graph](docs/preview.png)
 
@@ -19,55 +22,111 @@ Checkme O2 Max --BLE--> bridge.py --WebSocket--> overlay.html (OBS Browser Sourc
 contrast — `overlay.html`'s actual background is fully transparent, so in
 OBS only the panel itself is visible over your stream/game.*
 
+## Supported devices
+
+| Device | `--source` | Shows | Status |
+| --- | --- | --- | --- |
+| Checkme O2 Max | `viatom` | HR + SpO2 | **Verified** on real hardware |
+| O2Ring, Checkme O2, KidsO2, SleepU and other original-protocol Viatom/Wellue rings | `viatom` | HR + SpO2 | Same protocol as the O2 Max (per [`viatom-ble`](https://github.com/ecostech/viatom-ble)); untested here |
+| O2Ring S, SleepHQ O2 Pro and other second-generation ("OxyII") Viatom rings | `oxyii` | HR + SpO2 | Built from published protocol notes and tested against simulated replies; untested on a real ring. Falls back to heart rate only if the ring ignores the live-data request |
+| Viatom PC-60FW fingertip oximeter and OEM twins (OxySmart, ...) | `pc60` | HR + SpO2 | Decoder tested against frames captured from a real PC-60FW; untested on a device here |
+| Pulse oximeters with the standard Bluetooth PLX service | `plx` | HR + SpO2 | Built from the Bluetooth spec; untested |
+| Heart-rate straps and watches with the standard Bluetooth heart-rate service (Polar, Garmin HRM, Wahoo, Coospo, watches in "broadcast HR" mode...) | `hrs` | HR | Connection verified against the O2 Max's own heart-rate service |
+| Apple Watch via an iPhone relay app (see [Apple Watch](#apple-watch)) | `hrs` | HR | Same code path as any heart-rate strap |
+| Apple Watch via the Health Data Server app | `hds` | HR | Tested with simulated requests in the app's format |
+| None (simulated readings) | `demo` | HR + SpO2 | For laying out the overlay without hardware |
+
+Every Viatom ring also offers the standard heart-rate service, so `hrs`
+works with them too (heart rate only). If you try a device that isn't
+listed and it works, or a listed one that doesn't, an issue with what you
+saw is genuinely useful -- this table only claims what has been confirmed.
+
+Not sure what you have? `bridge.py --list-devices` scans and prints the
+exact `--source` value for every supported device in range.
+
 ## Platform support
 
-- **macOS** — **Verified** against a real Checkme O2 Max, first try, no code
-  changes needed.
+- **macOS** — **Verified** against a real Checkme O2 Max.
 - **Windows 10/11** — Implemented (auto-discovery, `.ps1` start/stop scripts)
   but **not yet run against real hardware** — see the platform-specific notes
   throughout this README and the comments in `start_bridge.ps1`/`stop_bridge.ps1`.
-- **Linux** — Untested, but `viatom-ble`/Bleak's primary development target is
-  actually a Raspberry Pi, so this is likely the best-supported platform
-  underneath — just use the `.sh` scripts and adjust the Bluetooth-permission
-  step below.
+- **Linux** — Untested, but Bleak (the Bluetooth library underneath) is well
+  supported there, and `viatom-ble`'s primary development target is a
+  Raspberry Pi — just use the `.sh` scripts and adjust the
+  Bluetooth-permission step below.
 
 If you test on Windows or Linux, opening an issue (or a PR) with what did or
-didn't work is genuinely useful — this table reflects what's been confirmed,
+didn't work is genuinely useful — this list reflects what's been confirmed,
 not just what should theoretically work.
 
-## Why not Pulsoid?
+## Combining sources (fallbacks)
 
-Pulsoid's public API is read-only (widgets pull *from* your HR stream); pushing
-a custom third-party source in requires emailing their support for OAuth
-client credentials, and Pulsoid has no concept of SpO2 at all. Since the
-Checkme's BLE protocol is already reverse-engineered and there's a
-battle-tested Python library for it, a small local bridge gets both metrics
-with lower latency and no external dependency.
+`--source` can be given more than once. Sources are used in the order you
+list them, and **each number comes from the first source that has a live
+value for it**. So:
+
+```bash
+python3 bridge.py --source viatom --source hds
+```
+
+shows heart rate and SpO2 from the ring while it's on your finger. If you
+take it off, or it runs flat, the overlay switches to the watch's heart
+rate within a couple of seconds and shows `--` for SpO2. It switches back
+as soon as the ring has a reading again. "Live" means a reading within the
+last 15 seconds (`--fresh-seconds`).
+
+## Apple Watch
+
+An Apple Watch can't stream SpO2 -- it only takes occasional background
+spot checks -- so it supplies heart rate only. There are two ways to get
+it to the bridge, neither involving Pulsoid:
+
+1. **Health Data Server (HDS) app** -- `--source hds`. The watch app sends
+   each reading straight to your computer over Wi-Fi. In the watch app,
+   set the server to this computer's IP address (LAN or Tailscale) and port
+   `3476`, then press start. This is the same thing the app's own desktop
+   receiver ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
+   `bridge.py` replaces it. HDS is a paid watch app.
+2. **An iPhone relay app** -- `--source hrs`. Apps such as ECHO, HeartCast or
+   HR Broadcast make your iPhone pose as a standard Bluetooth heart-rate
+   sensor, fed by the watch. Keep the relay app in the foreground when the
+   bridge first connects: iOS limits what a backgrounded app can advertise.
+   These are third-party apps; this project hasn't tested them individually.
+
+HDS sends over the network, so `bridge.py` has to accept incoming
+connections for it -- see [Security & privacy](#security--privacy) for what
+that listener does and doesn't accept. On macOS, allow incoming
+connections for Python if the firewall asks.
 
 ## How it works
 
-- [`bridge.py`](bridge.py) uses [`viatom-ble`](https://github.com/ecostech/viatom-ble)
-  (MIT, cross-platform via [Bleak](https://github.com/hbldh/bleak)) to connect
-  to the ring and poll it every 2 seconds. `viatom-ble` lists "Checkme O2" as
-  a supported device family alongside the O2Ring/KidsO2 — same Viatom BLE
-  service (`14839ac4-...`), same 0x17 "read sensors" command, same
-  notification packet layout. **Confirmed working against a real Checkme O2
-  Max on the first try** — no byte-offset changes needed.
-- It re-broadcasts every reading as JSON over a local WebSocket
-  (`ws://localhost:8765`).
-- No address to hunt down and paste anywhere: if you don't pin one, `bridge.py`
-  scans for a compatible device on startup and connects to it automatically.
-  This only needs pinning (see below) if you own more than one Viatom/Wellue/Checkme
-  device, or want to skip the ~10s scan on every start. (This does its own
-  stricter name matching rather than reusing `viatom-ble`'s built-in filter —
-  see the `_looks_like_viatom` docstring in `bridge.py` for why: the library's
-  own filter substring-matches "po" against device names, which false-positives
-  on "AirPods Pro" — caught during testing with a real AirPods case nearby.)
+- [`bridge.py`](bridge.py) runs every configured source at once and merges
+  them ([`vitalsign/merge.py`](vitalsign/merge.py)). It re-broadcasts the
+  result as JSON over a local WebSocket (`ws://localhost:8765`).
+- Original-protocol Viatom rings go through
+  [`viatom-ble`](https://github.com/ecostech/viatom-ble) (MIT, cross-platform
+  via [Bleak](https://github.com/hbldh/bleak)), which polls the ring every 2
+  seconds -- the path verified against a real Checkme O2 Max.
+- Every other Bluetooth protocol shares one connect/reconnect loop in
+  [`vitalsign/ble.py`](vitalsign/ble.py). The byte-level decoding for each
+  lives in [`vitalsign/protocols.py`](vitalsign/protocols.py) and is
+  unit-tested against captured or spec-defined frames (`tests/`).
+- Discovery reads each device's advertisement to pick its protocol. Viatom
+  rings of both generations advertise the same manufacturer ID and the
+  standard heart-rate service but not which protocol they speak, so for
+  those the bridge connects once briefly and checks which protocol service
+  the ring actually has. (The original version of this check guessed from
+  the advertisement alone and mistook a real O2 Max for a second-generation
+  ring.)
+- With no `--source`, `bridge.py` scans for exactly one supported device and
+  uses it, so a one-device setup needs no configuration. If several are in
+  range it keeps waiting and logs them, so you can pin one.
 - [`overlay.html`](overlay.html) is a self-contained page (no external
   requests, no build step) that connects to that WebSocket and renders a
   beating heart icon + BPM + SpO2, with a transparent background sized for
   compositing in OBS. It fades out and shows a status line if the bridge
-  disconnects or the ring comes off your finger.
+  disconnects or the device comes off. For heart-rate-only sources it shows
+  `--` for SpO2.
 - A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
   client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
   keeps a rolling window of the same readings it already gets over the
@@ -77,6 +136,8 @@ with lower latency and no external dependency.
   or shorter.
 
 ## Setup
+
+Needs Python 3.11 or newer.
 
 **macOS / Linux:**
 
@@ -108,21 +169,31 @@ blocking it — see the execution-policy note in
 
 ### 1. Run the bridge
 
-**Make sure the ring is NOT currently connected to ViHealth or
-O2Insight_Pro** — BLE only allows one active connection, so quit/disconnect
-those apps first (fine, since you'd use this for streaming, not overnight
-CPAP-sync sessions). Then, for a one-off manual run (useful the first time,
-to watch the logs and confirm readings look sane):
+**Make sure the device is NOT currently connected to its phone app**
+(ViHealth, O2Insight_Pro, a fitness app...) — BLE only allows one active
+connection, so quit/disconnect those apps first (fine, since you'd use
+this for streaming, not overnight CPAP-sync sessions). Then, for a one-off
+manual run (useful the first time, to watch the logs and confirm readings
+look sane):
 
 ```bash
 python3 bridge.py -v          # macOS/Linux
 python bridge.py -v           # Windows
 ```
 
-With no `--address`, it scans for a compatible device and connects to
-whichever one it finds — see it happen in the verbose log. If you own more
-than one such device, pass one explicitly instead
-(`--address <ADDRESS>`; find it with `viatom-ble --scan-interactive`).
+With no `--source`, it scans for a supported device and connects to it if
+it's the only one in range — see it happen in the verbose log. To pick a
+device, or to combine several, see what's in range and the exact value to
+use for each:
+
+```bash
+python3 bridge.py --list-devices
+python3 bridge.py --source viatom:<ADDRESS> --source hds   # e.g. ring + Apple Watch fallback
+python3 bridge.py --source demo                          # no hardware: simulated readings
+```
+
+`python3 bridge.py --help` lists every source type. The older
+`--address <ADDRESS>` still works and means `--source auto:<ADDRESS>`.
 
 For everyday use, use the start/stop scripts instead (idempotent — safe to
 call repeatedly, tracks their own PID, logs to `bridge.log`):
@@ -138,10 +209,10 @@ call repeatedly, tracks their own PID, logs to `bridge.log`):
 ```
 
 These are what the automatic-startup section below wires into OBS. If you
-want to pin an address or a non-default port for these scripts specifically,
-copy `config.sh.example`/`config.ps1.example` to `config.sh`/`config.ps1`
-and edit it — otherwise skip this, the defaults (auto-discover, port 8765)
-just work.
+want specific sources (`SOURCES`), a pinned device, or a non-default port
+for these scripts, copy `config.sh.example`/`config.ps1.example` to
+`config.sh`/`config.ps1` and edit it — otherwise skip this, the defaults
+(auto-discover, port 8765) just work.
 
 ### 2. Add the overlay to OBS
 
@@ -173,13 +244,13 @@ Python version to a venv containing `bleak`/`websockets`, which is a common
 source of "script failed to load" errors unrelated to your actual code.
 
 Advanced Scene Switcher can trigger on more than just scene changes; pick
-whichever condition actually matches when you want the ring connected:
+whichever condition actually matches when you want the device connected:
 
 - **Streaming/Recording condition (recommended default)** — starts the
   bridge exactly when you go live or start recording, stops it when you
   stop, regardless of how many scenes you have or switch between. This is
   usually the better fit even if you *do* have multiple scenes, since you
-  typically want the ring connected for the whole stream, not just one
+  typically want the device connected for the whole stream, not just one
   particular scene.
 - **Scene condition** — only if you specifically want the overlay/BLE
   connection tied to one particular scene rather than the whole
@@ -319,22 +390,38 @@ connection attempt happened at all.
 
 - **Overlay stuck on "Bridge offline"**: `bridge.py` isn't running, or the
   port doesn't match — both default to `8765`.
-- **"Connecting to ring…" forever**: the ring is probably still paired to
-  ViHealth/O2Insight_Pro. Force-quit that app/disconnect Bluetooth from it and
-  restart `bridge.py`.
-- **Readings look off (stuck at 0, or don't match the ring's own display)**:
-  the O2 Max may use a slightly different byte layout than the O2Ring/Checkme
-  O2 this library was built against. Run with `-v`, and if values look wrong,
-  the fix is adjusting the byte offsets in the installed `viatom_ble/protocol.py`
-  (`_IDX_SPO2` etc.) against the raw bytes logged — share a verbose log and
-  I can help adjust them.
-- **Ring battery draining fast while streaming**: expected — continuous BLE
-  polling keeps the radio active the whole session, same as the official app
-  would.
-- **Multiple devices found** (auto-discovery error listing more than one):
-  you own more than one Viatom/Wellue/Checkme device, or another one is in
-  range. Pin the one you want with `--address`, or `ADDRESS` in
-  `config.sh`/`config.ps1`.
+- **"Connecting…" or "Waiting for device…" forever**: the device is
+  probably still connected to its phone app (ViHealth, O2Insight_Pro...).
+  Force-quit that app/disconnect Bluetooth from it. Viatom rings also only
+  advertise for a short while after waking, so wake it (put it on, or press
+  its button). `bridge.py` keeps retrying, so there's no need to restart it.
+- **"Not worn" while the device is on**: it's the device's own report.
+  On a Checkme O2 Max showing "Error 4" or a blinking sensor, that's a
+  ring-sensor fault: the ring sensor or its cable needs replacing, not the
+  wrist unit.
+- **Readings look off (stuck at 0, or don't match the device's own display)**:
+  run with `-v` and compare. For original-protocol Viatom rings the byte
+  offsets live in the installed `viatom_ble/protocol.py` (`_IDX_SPO2` etc.);
+  for everything else in [`vitalsign/protocols.py`](vitalsign/protocols.py).
+  An issue with a verbose log is the fastest way to get a device's layout
+  fixed.
+- **Device battery draining fast while streaming**: expected — a held BLE
+  connection keeps the radio active the whole session, same as the official
+  app would. Viatom rings are disconnected after 5 minutes of "not worn" so
+  they can power down.
+- **"Several matching devices in range"** in the log: auto-discovery found
+  more than one, so it waits rather than guess. Pin the one you want with
+  `--source KIND:ADDRESS` (the log and `--list-devices` print it), or
+  `SOURCES` in `config.sh`/`config.ps1`.
+- **"has no oxyii service … try --source viatom:…"** (or similar): the
+  `--source` type you forced doesn't match the device; use the one
+  suggested.
+- **Apple Watch (HDS) readings never arrive**: check the watch app's server
+  address is this computer's current IP and port `3476`, that both are on
+  the same network (or Tailscale), and that the firewall allows incoming
+  connections for Python. `bridge.log` says "rejected a request from …" if
+  a request arrived from an address outside your private network ranges;
+  add that network with `--hds-allow CIDR` only if you know why it's there.
 - **(Windows) `start_bridge.ps1` does nothing / "running scripts is
   disabled"**: PowerShell's execution policy is blocking it. Run it directly
   via `powershell.exe -ExecutionPolicy Bypass -File start_bridge.ps1` to
@@ -412,6 +499,16 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
   `localhost` only — it's never reachable from your network, let alone the
   internet. There's no cloud service, account, or API key involved anywhere
   in this project.
+- **The HDS listener is the one network-facing part, and only when you ask
+  for it** (`--source hds`). It listens on port 3476 on all interfaces,
+  because the watch reaches your computer over Wi-Fi or Tailscale. It only
+  accepts requests from private address ranges (LAN, link-local, Tailscale
+  — see `DEFAULT_ALLOWED_NETWORKS` in [`vitalsign/hds.py`](vitalsign/hds.py)),
+  so a public IPv6 address doesn't expose it to the internet. It only takes
+  small heart-rate messages (anything over 4 KB is refused) and never sends
+  readings back. HDS has no authentication, so a device on your own network
+  *could* send fake heart-rate numbers to your overlay; it can't read
+  anything.
 - **The WebSocket also checks the `Origin` header**, restricted to what
   `overlay.html` actually sends when loaded as a local file — both `null`
   (what a generic browser sends for `file://`) and `http://absolute` (what
@@ -422,14 +519,16 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
   reading your live vitals in the background — see the `ALLOWED_ORIGINS`
   comment in `bridge.py`.
 - **What's excluded from git** (see `.gitignore`): `config.sh`/`config.ps1`
-  (contain your ring's BLE address — a device identifier, not a secret, but
+  (contain your device's BLE address — a device identifier, not a secret, but
   no reason to publish it), `bridge.log`/`bridge.out.log` (may contain
   historical readings), and `.bridge.pid`. Only the `.example` templates
   are tracked.
-- **BLE pairing**: connecting means the ring briefly can't be reached by
-  ViHealth/O2Insight_Pro (BLE allows one central connection at a time). No
-  pairing credentials are stored beyond what `viatom-ble`/Bleak need to
-  maintain the connection for that session.
+- **BLE pairing**: connecting means the device briefly can't be reached by
+  its own app (BLE allows one central connection at a time). No pairing
+  credentials are stored beyond what Bleak needs to maintain the connection
+  for that session. Second-generation Viatom rings are read without their
+  authentication handshake; the bridge only ever sends the live-values
+  request, never commands that change settings or read recorded files.
 - If you fork this and add your own integrations (e.g. pushing to a cloud
   service), audit what you're sending — heart rate and SpO2 are health data
   even in a casual streaming context.
@@ -454,7 +553,15 @@ usefully anyway; the current BPM value carries the information.
   reverse-engineered Viatom/Wellue BLE protocol and client this project is
   built on.
 - [Bleak](https://github.com/hbldh/bleak) (MIT) — the cross-platform BLE
-  library `viatom-ble` uses under the hood.
+  library everything here uses under the hood.
+- Protocol research that the other decoders are written from (no code
+  copied): [SomnoTrace](https://github.com/ilyakruchinin/SomnoTrace)'s
+  O2Ring S / OxyII notes, [sza2/viatom_pc60fw](https://github.com/sza2/viatom_pc60fw)'s
+  PC-60FW packet notes, and the PC-60FW frames captured in
+  [pedasmith/BluetoothDeviceController](https://github.com/pedasmith/BluetoothDeviceController)
+  that the PC-60 tests use.
+- [Health Data Server](https://github.com/Rexios80/hds_overlay) — the watch
+  app whose local-network message format the `hds` source accepts.
 - [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) —
   the OBS plugin used for scene-triggered automation.
 
