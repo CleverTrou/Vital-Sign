@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -127,9 +128,11 @@ def write_sources(path: Path, sources: list[str]) -> None:
     # The start scripts may read this file at any moment (OBS automation
     # runs them), so replace it in one step instead of truncating and
     # rewriting it in place.
-    tmp = path.with_name(path.name + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(tmp_name)
     try:
-        tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
