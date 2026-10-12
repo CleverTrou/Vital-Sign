@@ -28,9 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A control app for starting and stopping the bridge, watching the live
   readings, and choosing sources without editing files: `Vital Sign.app` on
   macOS, `Vital Sign.cmd` on Windows. It edits the same `config.sh`/`config.ps1`
-  that OBS automation uses.
-- `--list-devices --json` for machine-readable scan results.
-- Setup steps for the ECHO iPhone relay app.
+  that OBS automation uses. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
+- `--list-devices --json` for machine-readable scan results. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
+- Setup steps for the ECHO iPhone relay app. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
 
 ### Changed
 
