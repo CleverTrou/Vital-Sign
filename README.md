@@ -83,20 +83,59 @@ it to the bridge, neither involving Pulsoid:
 
 1. **Health Data Server (HDS) app** -- `--source hds`. The watch app sends
    each reading straight to your computer over Wi-Fi. In the watch app,
-   set the server to this computer's IP address (LAN or Tailscale) and port
-   `3476`, then press start. This is the same thing the app's own desktop
+   set the server to `http://<this computer's IP>:3476` -- LAN or Tailscale
+   IP, *with* the `http://` -- then press start. (The control app shows the
+   exact address to use.) This is the same thing the app's own desktop
    receiver ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
-   `bridge.py` replaces it. HDS is a paid watch app.
+   `bridge.py` replaces it. HDS is a paid watch app. Not yet confirmed with
+   the real app: on one watch it crashed on start with "Bad URL" when given
+   an address without `http://`.
 2. **An iPhone relay app** -- `--source hrs`. Apps such as ECHO, HeartCast or
    HR Broadcast make your iPhone pose as a standard Bluetooth heart-rate
-   sensor, fed by the watch. Keep the relay app in the foreground when the
-   bridge first connects: iOS limits what a backgrounded app can advertise.
-   These are third-party apps; this project hasn't tested them individually.
+   sensor, fed by the watch. These are third-party apps; this project
+   hasn't tested them individually. With ECHO, for example:
+   1. Install ECHO on the iPhone (its watch app installs alongside).
+   2. Start a workout in ECHO so it begins broadcasting, and keep ECHO open
+      on the iPhone the first time: iOS limits what a backgrounded app can
+      advertise, so the Mac may not see it otherwise.
+   3. Scan for devices (the control app's *Scan for devices…*, or
+      `bridge.py --list-devices`). The iPhone appears as an `hrs` device;
+      add it, or use the printed `--source hrs:<ADDRESS>`.
+   4. Start the bridge. The Mac connects over Bluetooth, so the iPhone has
+      to stay within Bluetooth range of it.
+
+   ECHO's free tier stops each workout at 20 minutes; Echo Pro removes that.
+   ECHO ends its broadcast if another workout app starts on the watch.
 
 HDS sends over the network, so `bridge.py` has to accept incoming
 connections for it -- see [Security & privacy](#security--privacy) for what
 that listener does and doesn't accept. On macOS, allow incoming
 connections for Python if the firewall asks.
+
+## Control app
+
+A small window for starting and stopping the bridge, watching the live
+numbers, and choosing sources (scan, add, reorder, remove) without
+editing files:
+
+- **macOS:** open `Vital Sign.app` in this folder.
+- **Windows:** double-click `Vital Sign.cmd`. (Unverified on real Windows
+  so far, like the rest of the Windows support.)
+- **Any platform:** `.venv/bin/python3 gui.py`.
+
+It's a front end to the same pieces OBS automation uses: source changes are
+written to `config.sh`/`config.ps1`, and Start/Stop run
+`start_bridge`/`stop_bridge`, so the app and Advanced Scene Switcher always
+agree. Closing the window leaves the bridge running -- a stream shouldn't
+lose its overlay because a settings window closed. Use Stop for that.
+
+On macOS, Bluetooth permission is asked for "Vital Sign" the first time a
+scan or the bridge runs from the app, for the same reason
+`VitalSignBridge.app` exists (see [Automatic startup](#automatic-startup)).
+
+Accessibility caveat: the window is built with Tk, whose current version
+doesn't expose its controls to VoiceOver or other assistive tech. Everything
+it does is also available from the command line and the config files.
 
 ## How it works
 

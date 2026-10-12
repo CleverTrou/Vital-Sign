@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `config.sh`/`config.ps1` does the same for the start scripts. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - `--source demo` shows simulated readings for setting up the overlay
   without hardware. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
+- A control app for starting and stopping the bridge, watching the live
+  readings, and choosing sources without editing files: `Vital Sign.app` on
+  macOS, `Vital Sign.cmd` on Windows. It edits the same `config.sh`/`config.ps1`
+  that OBS automation uses.
+- `--list-devices --json` for machine-readable scan results.
+- Setup steps for the ECHO iPhone relay app.
 
 ### Changed
 

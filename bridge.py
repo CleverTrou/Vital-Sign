@@ -125,14 +125,15 @@ async def run_source(spec: SourceSpec, source, set_state) -> None:
     set_state(merge.DISCONNECTED)
 
 
-async def list_devices(scan_duration: float) -> None:
+async def list_devices(scan_duration: float, as_json: bool = False) -> None:
     from vitalsign.ble import KIND_DESCRIPTIONS, VIATOM_FAMILY, probe, scan
 
-    print(f"Scanning {scan_duration:.0f}s for supported Bluetooth devices...")
+    say = (lambda *_: None) if as_json else print
+    say(f"Scanning {scan_duration:.0f}s for supported Bluetooth devices...")
     found = await scan(scan_duration)
     if not found:
-        print("None found. Make sure the device is on/worn and not connected to its phone app.")
-        return
+        say("None found. Make sure the device is on/worn and not connected to its phone app.")
+    devices = []
     for f in found:
         kind = f.kind
         if kind == VIATOM_FAMILY:
@@ -141,12 +142,23 @@ async def list_devices(scan_duration: float) -> None:
             try:
                 kind = await probe(f.address) or kind
             except Exception as e:  # noqa: BLE001 -- report and keep listing
-                print(f"  ({f.label}: couldn't connect to identify it: {e})")
+                say(f"  ({f.label}: couldn't connect to identify it: {e})")
         # An unidentified Viatom device still works as auto:ADDRESS, which
         # identifies it when the bridge connects.
         shown = "auto" if kind == VIATOM_FAMILY else kind
-        print(f"  {f.label:<24} --source {shown}:{f.address}   RSSI={f.rssi}")
-        print(f"  {'':<24} {KIND_DESCRIPTIONS[kind]}")
+        devices.append(
+            {
+                "name": f.name,
+                "source": f"{shown}:{f.address}",
+                "kind": kind,
+                "description": KIND_DESCRIPTIONS[kind],
+                "rssi": f.rssi,
+            }
+        )
+        say(f"  {f.label:<24} --source {shown}:{f.address}   RSSI={f.rssi}")
+        say(f"  {'':<24} {KIND_DESCRIPTIONS[kind]}")
+    if as_json:
+        print(json.dumps(devices))
 
 
 def _positive_finite_seconds(raw: str) -> float:
@@ -179,6 +191,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Scan once, print every supported device in range with the --source value for it, and exit",
     )
+    parser.add_argument("--json", action="store_true", help="With --list-devices: print the result as JSON")
     parser.add_argument(
         "--scan-duration",
         type=_positive_finite_seconds,
@@ -222,7 +235,7 @@ async def main() -> None:
     )
 
     if args.list_devices:
-        await list_devices(args.scan_duration)
+        await list_devices(args.scan_duration, as_json=args.json)
         return
 
     hub = Hub(len(args.specs), args.fresh_seconds)
