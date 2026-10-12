@@ -39,6 +39,11 @@ class ConfigFileTest(unittest.TestCase):
         self.assertEqual(s.sources, ["hrs:5B1F0E2A-6C3D-4E9B-9A1E-0123456789AB", "hds:4000"])
         self.assertEqual(s.ws_port, 8770)
 
+    def test_write_leaves_no_temp_file(self):
+        path = self.root / "config.sh"
+        write_sources(path, ["demo"])
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["config.sh"])
+
     def test_new_file_gets_a_header(self):
         path = self.root / "config.sh"
         write_sources(path, ["auto"])

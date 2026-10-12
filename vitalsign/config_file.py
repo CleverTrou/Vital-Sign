@@ -12,6 +12,7 @@ against a strict character set first; nothing else ever reaches them.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -123,4 +124,12 @@ def write_sources(path: Path, sources: list[str]) -> None:
         out.append(line)
     if not replaced:
         out.append(new_line)
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    # The start scripts may read this file at any moment (OBS automation
+    # runs them), so replace it in one step instead of truncating and
+    # rewriting it in place.
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

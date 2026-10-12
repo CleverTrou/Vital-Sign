@@ -206,6 +206,7 @@ class App:
             write_sources(CONFIG, self.settings.sources)
         except (OSError, ValueError) as e:
             messagebox.showerror("Vital Sign", f"Couldn't save {CONFIG.name}:\n{e}")
+            self.settings = read_settings(CONFIG)  # show what's really saved
         self._refresh_sources()
 
     def _add(self, spec: str, name: str | None = None) -> None:

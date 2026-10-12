@@ -54,6 +54,16 @@ class GuiTest(unittest.TestCase):
         self.app._remove()
         self.assertIn('SOURCES="viatom:AA:BB:CC:DD:EE:FF"', self.gui.CONFIG.read_text())
 
+    def test_failed_save_shows_what_is_really_saved(self):
+        self.app._add("hds")
+        with mock.patch.object(self.gui, "write_sources", side_effect=OSError("disk full")), mock.patch.object(
+            self.gui.messagebox, "showerror"
+        ) as showerror:
+            self.app._add("demo")
+        showerror.assert_called_once()
+        self.assertEqual(self.app.settings.sources, ["hds"])
+        self.assertEqual(len(self.app.listbox.get(0, "end")), 1)
+
     def test_status_when_stopped(self):
         self.app._update_status()
         self.assertEqual(self.app.status.cget("text"), "○ Stopped")
