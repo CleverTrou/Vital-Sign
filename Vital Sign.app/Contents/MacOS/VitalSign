@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Opens the Vital Sign control window (gui.py) with this repo's venv.
+#
+# Being an app bundle matters for Bluetooth on macOS: the bridge and scans
+# the window starts inherit this bundle's identity, and its Info.plist
+# declares Bluetooth usage, so macOS asks for permission once instead of
+# refusing (see the VitalSignBridge.app notes in the README).
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+exec "$DIR/.venv/bin/python3" "$DIR/gui.py"
