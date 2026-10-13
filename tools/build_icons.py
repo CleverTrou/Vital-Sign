@@ -40,7 +40,18 @@ APPEARANCES = ["Default", "Dark", "ClearLight", "ClearDark", "TintedLight", "Tin
 
 
 def run(*cmd: str | Path) -> None:
-    subprocess.run([str(c) for c in cmd], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    """Run a tool quietly, but show its errors if it fails.
+
+    stderr is captured rather than passed through because Xcode 26's tools
+    print pages of harmless "dyld[...]: symbol ... missing" lines on
+    macOS 15; those are filtered out of what's shown on failure.
+    """
+    args = [str(c) for c in cmd]
+    result = subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        errors = [line for line in result.stderr.splitlines() if not line.startswith("dyld[")]
+        print("\n".join(errors), file=sys.stderr)
+        raise subprocess.CalledProcessError(result.returncode, args, stderr=result.stderr)
 
 
 def render(svg: Path, size: int, out: Path) -> Path:
