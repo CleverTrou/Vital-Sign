@@ -114,6 +114,23 @@ class GuiTest(unittest.TestCase):
         notice.assert_called_once()
         run.assert_not_called()
 
+    def test_start_keeps_a_custom_port_when_restoring_the_file(self):
+        self.gui.CONFIG.write_text('SOURCES="hds"\nWS_PORT="8766"\n')
+        self.app.settings = self.gui.read_settings(self.gui.CONFIG)
+        self.gui.CONFIG.unlink()
+        run, _ = self._press_start()
+        self.assertEqual(self.gui.read_settings(self.gui.CONFIG).ws_port, 8766)
+        run.assert_called_once()
+
+    def test_start_follows_a_port_changed_elsewhere(self):
+        self.app._add("hds")
+        self.gui.CONFIG.write_text(self.gui.CONFIG.read_text() + 'WS_PORT="8766"\n')
+        run, notice = self._press_start()
+        self.assertEqual(self.app.settings.ws_port, 8766)
+        self.assertEqual(self.app.feed.port, 8766)
+        notice.assert_called_once()
+        run.assert_not_called()
+
     def test_restart_does_not_stop_the_bridge_when_it_will_not_start(self):
         self.app._add("hds")
         self.gui.write_sources(self.gui.CONFIG, [])

@@ -339,7 +339,8 @@ class App:
         self._set_window_icon()
         self._build()
         self._refresh_sources()
-        LiveFeed(self.settings.ws_port, self.events).start()
+        self.feed = LiveFeed(self.settings.ws_port, self.events)
+        self.feed.start()
         self._poll()
 
     # -- layout -------------------------------------------------------
@@ -586,24 +587,25 @@ class App:
             if not CONFIG.exists():
                 if not self.settings.sources:
                     return True
-                write_sources(CONFIG, self.settings.sources)
+                write_sources(CONFIG, self.settings.sources, self.settings.ws_port)
                 messagebox.showinfo(
                     "Vital Sign",
                     f"{CONFIG.name} was missing, so the bridge would have scanned for any Bluetooth "
                     "device instead of using the sources listed here. It has been restored from this window.",
                 )
                 return True
-            saved = read_settings(CONFIG).sources
+            saved = read_settings(CONFIG)
         except (OSError, ValueError) as e:
             messagebox.showerror("Vital Sign", f"Couldn't check {CONFIG.name}:\n{e}")
             return False
-        if saved == self.settings.sources:
+        if saved.sources == self.settings.sources and saved.ws_port == self.settings.ws_port:
             return True
-        self.settings.sources = saved
+        self.settings = saved
+        self.feed.port = saved.ws_port
         self._refresh_sources()
         messagebox.showinfo(
             "Vital Sign",
-            f"{CONFIG.name} was changed outside this window, so the source list now shows what is saved. "
+            f"{CONFIG.name} was changed outside this window, so the window now shows what is saved. "
             f"Check it, then press {action} again.",
         )
         return False

@@ -88,21 +88,29 @@ def read_settings(path: Path) -> Settings:
     return settings
 
 
-def write_sources(path: Path, sources: list[str]) -> None:
+def write_sources(path: Path, sources: list[str], ws_port: int | None = None) -> None:
     """Set the sources, keeping everything else in the file as it was.
 
     An active ADDRESS line is commented out: read_settings already folded
     it into the source list, and leaving it active would add the device
     a second time.
+
+    ``ws_port`` is for restoring a deleted file: a non-default port is
+    written if the file has no active port line of its own, so the
+    bridge keeps the port the window is watching.
     """
     sources = [validate(s) for s in sources]
     windows = path.suffix == ".ps1"
     if windows:
         new_line = "$Sources = @(" + ", ".join(f'"{s}"' for s in sources) + ")"
+        port_line = f"$WsPort = {ws_port}"
+        is_port = re.compile(r"^\s*\$WsPort\s*=", re.IGNORECASE)
         is_sources = re.compile(r"^\s*\$Sources\s*=", re.IGNORECASE)
         is_address = re.compile(r"^\s*\$Address\s*=", re.IGNORECASE)
     else:
         new_line = f'SOURCES="{" ".join(sources)}"'
+        port_line = f'WS_PORT="{ws_port}"'
+        is_port = re.compile(r"^\s*WS_PORT=")
         is_sources = re.compile(r"^\s*SOURCES=")
         is_address = re.compile(r"^\s*ADDRESS=")
 
@@ -125,6 +133,8 @@ def write_sources(path: Path, sources: list[str]) -> None:
         out.append(line)
     if not replaced:
         out.append(new_line)
+    if ws_port is not None and ws_port != DEFAULT_WS_PORT and not any(is_port.match(line) for line in out):
+        out.append(port_line)
     # The start scripts may read this file at any moment (OBS automation
     # runs them), so replace it in one step instead of truncating and
     # rewriting it in place.
