@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When no SpO₂ has arrived for 30 seconds -- a watch or heart-rate strap, or
   a ring that's been taken off -- the overlay and the control window drop
   their SpO₂ half and narrow to heart rate alone, at the same size. SpO₂
-  comes back as soon as a value arrives.
+  comes back as soon as a value arrives. ([#10](https://github.com/CleverTrou/Vital-Sign/pull/10))
 - The overlay shows `--` for SpO₂ when the current source only measures
   heart rate, and its status messages no longer assume a ring. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - With no `--source`, the bridge keeps scanning until a device shows up
