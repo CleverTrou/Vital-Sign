@@ -9,8 +9,9 @@ Families:
   OxySmart): a push protocol over the Nordic UART service.
 - Viatom "OxyII", the second-generation ring protocol (O2Ring S and its
   OEM variants): request/response frames on a Lepu-specific service.
-- Bluetooth SIG Heart Rate Service: chest straps, many watches, and every
-  "turn your Apple Watch into a Bluetooth HR monitor" relay app.
+- Bluetooth SIG Heart Rate Service: chest straps, watches that broadcast
+  heart rate (natively, as Garmin's do, or through an app), and phone relay
+  apps that rebroadcast a watch's heart rate (e.g. for Apple Watch).
 - Bluetooth SIG Pulse Oximeter Service (PLX).
 - The Health Data Server (HDS) watch app's HTTP payload.
 

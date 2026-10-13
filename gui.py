@@ -398,7 +398,7 @@ class App:
         ttk.Button(buttons, text="Scan for devices…", command=self.scan).pack(side="left")
         add = ttk.Menubutton(buttons, text="Add")
         menu = tk.Menu(add, tearoff=False)
-        menu.add_command(label="Apple Watch (HDS)", command=lambda: self._add("hds"))
+        menu.add_command(label="Watch (HDS app)", command=lambda: self._add("hds"))
         menu.add_command(label="Demo readings", command=lambda: self._add("demo"))
         add["menu"] = menu
         add.pack(side="left", padx=(6, 0))
@@ -448,7 +448,7 @@ class App:
     def _device_name(self, spec: str) -> str:
         kind = parse_source(spec).kind
         if kind == "hds":
-            return "Apple Watch (HDS app)"
+            return "Watch (HDS app)"
         if kind == "demo":
             return "Demo readings"
         if spec == "auto":
@@ -747,8 +747,9 @@ class ScanDialog:
         elif not devices:
             self.label.configure(
                 text="Nothing found. Wake the device (put it on, or press its button), make sure "
-                "its phone app isn't connected to it, and scan again. For Apple Watch through "
-                "ECHO, start a workout in ECHO and keep it open on the iPhone."
+                "its phone app isn't connected to it, and scan again. For a watch, turn on its "
+                "heart-rate broadcast first (on Garmin, Broadcast Heart Rate; for Apple Watch, a "
+                "relay app such as ECHO, kept open on the iPhone)."
             )
         else:
             self.label.configure(text="Pick a device to add it as a source:")

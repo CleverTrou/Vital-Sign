@@ -5,13 +5,13 @@
 
 Live heart rate + SpO2 overlay for OBS, read directly from your own devices:
 Viatom/Wellue rings and fingertip oximeters, any standard Bluetooth
-heart-rate strap or pulse oximeter, and Apple Watch. No cloud service, no
+heart-rate strap or pulse oximeter, and smartwatches. No cloud service, no
 account, no Pulsoid.
 
 ```text
 ring / oximeter / strap --BLE------\
                                     bridge.py --WebSocket--> overlay.html (OBS Browser Source)
-Apple Watch (HDS app) --your Wi-Fi-/
+watch (HDS app) -------your Wi-Fi-/
 ```
 
 > This is a hobby project for putting vitals on a stream overlay, not a
@@ -35,8 +35,8 @@ OBS only the panel itself is visible over your stream/game.*
 | Viatom PC-60FW fingertip oximeter and OEM twins (OxySmart, ...) | `pc60` | HR + SpO2 | Decoder tested against frames captured from a real PC-60FW; untested on a device here |
 | Pulse oximeters with the standard Bluetooth PLX service | `plx` | HR + SpO2 | Built from the Bluetooth spec; untested |
 | Heart-rate straps and watches with the standard Bluetooth heart-rate service (Polar, Garmin HRM, Wahoo, Coospo, watches in "broadcast HR" mode...) | `hrs` | HR | Connection verified against the O2 Max's own heart-rate service |
-| Apple Watch via an iPhone relay app (see [Apple Watch](#apple-watch)) | `hrs` | HR | Same code path as any heart-rate strap |
-| Apple Watch via the Health Data Server app | `hds` | HR | Tested with simulated requests in the app's format |
+| Smartwatches that broadcast heart rate over Bluetooth: Garmin (built in), Wear OS and others through a broadcast app, Apple Watch through an iPhone relay app (see [Smartwatches](#smartwatches)) | `hrs` | HR | Same code path as any heart-rate strap; the apps themselves untested here |
+| Apple Watch, or Wear OS where the app supports the watch, via the Health Data Server app | `hds` | HR | Tested with simulated requests in the format HDS's own receiver accepts; untested with the real app |
 | None (simulated readings) | `demo` | HR + SpO2 | For laying out the overlay without hardware |
 
 Every Viatom ring also offers the standard heart-rate service, so `hrs`
@@ -78,25 +78,25 @@ rate within a couple of seconds and shows `--` for SpO2. It switches back
 as soon as the ring has a reading again. "Live" means a reading within the
 last 15 seconds (`--fresh-seconds`).
 
-## Apple Watch
+## Smartwatches
 
-An Apple Watch can't stream SpO2 -- it only takes occasional background
-spot checks -- so it supplies heart rate only. There are two ways to get
-it to the bridge, neither involving Pulsoid:
+Watches supply heart rate only: neither route below carries SpO2, which
+watches measure in occasional spot checks or during sleep rather than as a
+live stream. There are two ways to get a watch's heart rate to the bridge,
+neither involving Pulsoid.
 
-1. **Health Data Server (HDS) app** -- `--source hds`. The watch app sends
-   each reading straight to your computer over Wi-Fi. In the watch app,
-   set the server to `http://<this computer's IP>:3476` -- LAN or Tailscale
-   IP, *with* the `http://` -- then press start. (The control app shows the
-   exact address to use.) This is the same thing the app's own desktop
-   receiver ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
-   `bridge.py` replaces it. HDS is a paid watch app. Not yet confirmed with
-   the real app: on one watch it crashed on start with "Bad URL" when given
-   an address without `http://`.
-2. **An iPhone relay app** -- `--source hrs`. Apps such as ECHO, HeartCast or
-   HR Broadcast make your iPhone pose as a standard Bluetooth heart-rate
-   sensor, fed by the watch. These are third-party apps; this project
-   hasn't tested them individually. With ECHO, for example:
+1. **Bluetooth heart-rate broadcast** -- `--source hrs`. The most widely
+   compatible route, and the same code path as a chest strap: anything that
+   presents the standard Bluetooth heart-rate service works.
+   - **Garmin** watches have it built in (*Broadcast Heart Rate*).
+   - **Wear OS, Galaxy** and other watches need a heart-rate broadcast app
+     from their app store.
+   - **Apple Watch** can't broadcast on its own, so an iPhone relay app
+     (ECHO, HeartCast, HR Broadcast...) poses as the heart-rate sensor,
+     fed by the watch.
+
+   These are third-party features and apps that this project hasn't tested
+   individually. With ECHO for Apple Watch, for example:
    1. Install ECHO on the iPhone (its watch app installs alongside).
    2. Start a workout in ECHO so it begins broadcasting, and keep ECHO open
       on the iPhone the first time: iOS limits what a backgrounded app can
@@ -109,6 +109,20 @@ it to the bridge, neither involving Pulsoid:
 
    ECHO's free tier stops each workout at 20 minutes; Echo Pro removes that.
    ECHO ends its broadcast if another workout app starts on the watch.
+2. **Health Data Server (HDS) app** -- `--source hds`. The watch sends each
+   reading straight to your computer over Wi-Fi, so it doesn't have to be in
+   Bluetooth range. In the watch app, set the server to
+   `http://<this computer's IP>:3476` -- LAN or Tailscale IP, *with* the
+   `http://` -- then press start. (The control app shows the exact address
+   to use.) This is the same thing the app's own desktop receiver
+   ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
+   `bridge.py` replaces it. HDS is a paid app for **Apple Watch** and
+   **Wear OS**, with a caveat for Wear OS: the HDS project says its Wear OS
+   app works on Wear OS 2 and sends heart rate only, and most current Wear
+   OS watches (Pixel Watch, Galaxy Watch4 and later) run Wear OS 3 or newer
+   -- so check that it supports yours, or use option 1. Not yet confirmed
+   with the real app on either platform: on one Apple Watch it crashed on
+   start with "Bad URL" when given an address without `http://`.
 
 HDS sends over the network, so `bridge.py` has to accept incoming
 connections for it -- see [Security & privacy](#security--privacy) for what
@@ -129,7 +143,7 @@ numbers, and choosing sources without editing files. From the top:
   source each number comes from. It dims when readings stop, like the
   overlay.
 - **Sources:** top is preferred, the rest are fallbacks. Scan for Bluetooth
-  devices, add Apple Watch (HDS) or demo readings from **Add**, reorder with
+  devices, add a watch (HDS app) or demo readings from **Add**, reorder with
   ↑/↓, remove. With HDS listed, the exact address to give the watch app is
   shown underneath.
 - **Recent log:** the latest line; click it to expand the last few.
@@ -281,7 +295,7 @@ use for each:
 
 ```bash
 python3 bridge.py --list-devices
-python3 bridge.py --source viatom:<ADDRESS> --source hds   # e.g. ring + Apple Watch fallback
+python3 bridge.py --source viatom:<ADDRESS> --source hds   # e.g. ring + watch fallback
 python3 bridge.py --source demo                          # no hardware: simulated readings
 ```
 
@@ -509,7 +523,7 @@ connection attempt happened at all.
 - **"has no oxyii service … try --source viatom:…"** (or similar): the
   `--source` type you forced doesn't match the device; use the one
   suggested.
-- **Apple Watch (HDS) readings never arrive**: check the watch app's server
+- **HDS watch readings never arrive**: check the watch app's server
   address is this computer's current IP and port `3476`, that both are on
   the same network (or Tailscale), and that the firewall allows incoming
   connections for Python. `bridge.log` says "rejected a request from …" if

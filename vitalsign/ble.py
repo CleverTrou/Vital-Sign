@@ -67,7 +67,7 @@ KIND_DESCRIPTIONS = {
     OXYII: "Viatom/Wellue ring, second-generation protocol (O2Ring S, ...)",
     PC60: "Viatom PC-60FW-family fingertip oximeter",
     PLX: "Bluetooth pulse oximeter (standard PLX service)",
-    HRS: "Bluetooth heart-rate sensor (standard service: straps, watches, Apple Watch relay apps)",
+    HRS: "Bluetooth heart-rate sensor (standard service: straps, watches broadcasting heart rate, phone relay apps)",
     VIATOM_FAMILY: "Viatom/Wellue device; protocol is detected when connecting",
 }
 

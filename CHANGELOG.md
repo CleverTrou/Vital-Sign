@@ -15,10 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fingertip oximeters, and any Bluetooth heart-rate strap, watch or pulse
   oximeter that uses the standard services. `--list-devices` shows what's in
   range and the exact `--source` value for each. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
-- Apple Watch heart rate without Pulsoid, two ways: the Health Data Server
-  watch app sends it straight to the bridge over your network
-  (`--source hds`), or an iPhone relay app makes the watch look like a
-  Bluetooth heart-rate strap (`--source hrs`). ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
+- Smartwatch heart rate without Pulsoid, two ways: any watch that
+  broadcasts heart rate over Bluetooth (Garmin's built-in broadcast, a
+  broadcast app on Wear OS, or an iPhone relay app for Apple Watch;
+  `--source hrs`), or the Health Data Server app for Apple Watch and
+  Wear OS, which sends it over your network (`--source hds`). ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - Fallbacks: give `--source` more than once and each number comes from the
   first source with a live reading. With `--source viatom --source hds`, the
   watch's heart rate takes over when the ring is off. `SOURCES` in

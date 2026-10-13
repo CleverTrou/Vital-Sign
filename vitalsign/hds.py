@@ -1,8 +1,9 @@
 """Receive heart rate from the Health Data Server (HDS) watch app.
 
-HDS (Apple Watch, also Wear OS) can send each reading straight to a
-computer on your network instead of to its cloud: in the watch app, set
-the server address to this machine's IP and the port below. It sends
+HDS (Apple Watch, and Wear OS where its app supports the watch) can send
+each reading straight to a computer on your network instead of to its
+cloud: in the watch app, set the server address to this machine's IP and
+the port below. It sends
 ``PUT /`` with ``{"data": "heartRate:72"}`` -- the same thing its own
 desktop receiver, hds_desktop, accepts. No account, cloud or Pulsoid.
 

@@ -58,7 +58,7 @@ class GuiTest(unittest.TestCase):
         self.app.table.selection_set("1")
         self.app._move(-1)
         self.assertIn('SOURCES="hds viatom:AA:BB:CC:DD:EE:FF"', self.gui.CONFIG.read_text())
-        self.assertEqual([r[1] for r in self.rows()], ["Apple Watch (HDS app)", "O2M 3994"])
+        self.assertEqual([r[1] for r in self.rows()], ["Watch (HDS app)", "O2M 3994"])
         self.assertIn("http://", self.app.hint_text())
         self.app.table.selection_set("0")
         self.app._remove()
