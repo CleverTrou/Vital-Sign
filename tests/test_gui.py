@@ -109,12 +109,35 @@ class GuiTest(unittest.TestCase):
     def test_panel_width_does_not_depend_on_the_digits(self):
         r = self.app.readout
         r.winfo_width = lambda: 552
+        r.show_spo2 = True
         widths = set()
         for hr, spo2 in ((None, None), (61, 99), (111, 100), (188, 88), (72, 91)):
             r.hr, r.spo2 = hr, spo2
             r.redraw()
             widths.add(round(r.panel_width, 3))
         self.assertEqual(len(widths), 1, widths)
+
+    def test_spo2_section_only_while_spo2_arrives(self):
+        r = self.app.readout
+        r.winfo_width = lambda: 552
+        self.app.bridge_up = True
+        # Heart rate only (a watch or strap): no SpO2 section.
+        self.app._show_reading({"type": "reading", "hr": 70, "spo2": None, "worn": True, "hr_source": "Watch"})
+        self.assertFalse(r.show_spo2)
+        hr_only = r.panel_width
+        # An SpO2 value shows it straight away, and the panel widens.
+        self.app._show_reading({"type": "reading", "hr": 70, "spo2": 97, "worn": True, "hr_source": "Ring"})
+        self.assertTrue(r.show_spo2)
+        self.assertGreater(r.panel_width, hr_only)
+        # A brief gap (ring settling) keeps it...
+        self.app.last_spo2 -= self.gui.SPO2_HIDE_S - 5
+        self.app._age_readout()
+        self.assertTrue(r.show_spo2)
+        # ...30 s without SpO2 hides it again.
+        self.app.last_spo2 -= 10
+        self.app._age_readout()
+        self.assertFalse(r.show_spo2)
+        self.assertEqual(r.panel_width, hr_only)
 
     def test_long_source_names_stay_beside_the_panel(self):
         r = self.app.readout
