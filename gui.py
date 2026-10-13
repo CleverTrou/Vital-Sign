@@ -60,6 +60,10 @@ EMPTY_SOURCES = "(none: the bridge scans for one supported Bluetooth device)"
 SOURCE_COLUMN_PX = 200
 # The platform's own text color (follows light/dark mode on macOS).
 TEXT_COLOR = {"darwin": "systemTextColor", "win32": "SystemWindowText"}.get(sys.platform, "black")
+STATUS_COLOR = {"darwin": "systemLabelColor", "win32": "SystemWindowText"}.get(sys.platform, "black")
+# Tk drops the alpha of macOS's secondary label color, so a fixed gray
+# that reads on both light and dark windows stands in for it.
+STATUS_SECONDARY = "#8e8e93"
 
 # bridge.log lines: "2026-10-11 21:20:58,376 INFO message"
 _LOG_LINE = re.compile(r"^\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d),\d+ (\w+) (.*)$")
@@ -142,11 +146,24 @@ class Fonts:
 
 
 class Readout(tk.Canvas):
-    """A copy of the overlay panel: heart, BPM, SpO2, status, 5-minute trend."""
+    """The overlay's panel, as OBS shows it, plus status lines beside it.
 
-    PAD_TOP, PAD_SIDE, PAD_BOTTOM = 16, 20, 12
+    The panel is sized to its numbers like overlay.html's (whose
+    proportions are scaled here from its 56 px values to 44 px): heart and
+    BPM, a divider, SpO2, and the trend underneath, exactly as wide as that
+    row. The connection status sits outside the panel, on the window.
+    """
+
+    SCALE = 44 / 56  # overlay.html's .value is 56 px
+    PAD_X, PAD_Y = round(32 * SCALE), round(18 * SCALE)
+    GAP = round(10 * SCALE)  # inside a metric, and between the row and the trend
+    METRIC_GAP = round(28 * SCALE)  # around the divider
+    DIVIDER_H = round(48 * SCALE)
+    TREND_H = round(44 * SCALE)
+    RADIUS = round(20 * SCALE)
+    ROW_H = 44  # .value has line-height: 1
     HEART = 30
-    TREND_H, TREND_GAP = 34, 8
+    STATUS_GAP = 16
 
     def __init__(self, parent: tk.Misc, fonts: Fonts, bg: str) -> None:
         self.fonts = fonts
@@ -155,8 +172,7 @@ class Readout(tk.Canvas):
             stale: tk.PhotoImage(master=parent, file=str(brand.UI_DIR / name))
             for stale, name in ((False, "heart.png"), (True, "heart-stale.png"))
         }
-        self.row_h = fonts.value.metrics("linespace")
-        height = self.PAD_TOP + self.row_h + self.TREND_GAP + self.TREND_H + self.PAD_BOTTOM
+        height = self.PAD_Y + self.ROW_H + self.GAP + self.TREND_H + self.PAD_Y
         # 552 wide sets the window's natural width (600 with its padding).
         super().__init__(parent, width=552, height=height, highlightthickness=0, bd=0, bg=bg)
         self.hr: int | None = None
@@ -165,6 +181,8 @@ class Readout(tk.Canvas):
         self.source_line = ""
         self.stale = True
         self.history: list[tuple[float, int]] = []
+        self.panel_width = 0.0
+        self.trend_box = (0.0, 0.0, 0.0, 0.0)
         self.bind("<Configure>", lambda _e: self.redraw())
 
     def color(self, c: str) -> str:
@@ -185,46 +203,64 @@ class Readout(tk.Canvas):
         w = max(self.winfo_width(), 1)
         h = int(self.cget("height"))
         f = self.fonts
-        smooth_shape(self, brand.rounded_rect_points(0.5, 0.5, w - 0.5, h - 0.5, 12), brand.PANEL)
+        top = self.PAD_Y
+        # Baseline of a line-height: 1 box, as in the overlay's CSS.
+        ascent, descent = f.value.metrics("ascent"), f.value.metrics("descent")
+        baseline = top + (self.ROW_H - (ascent + descent)) / 2 + ascent
+        mid = top + self.ROW_H / 2
 
-        top = self.PAD_TOP
-        baseline = top + f.value.metrics("ascent")
-        mid = baseline - f.value.metrics("ascent") * 0.36  # middle of the digits
-        x = self.PAD_SIDE
-
-        self.create_image(x, mid - self.HEART / 2, image=self.heart_images[self.stale], anchor="nw")
-        x += self.HEART + 8
-        x = self._text(x, baseline, str(self.hr) if self.hr else "--", f.value, brand.INK) + 8
-        x = self._text(x, baseline, "bpm", f.unit, brand.INK_MUTED) + 20
-        self.create_line(x, mid - 19, x, mid + 19, fill=self.color(brand.DIVIDER))
-        x += 20 + 1
-
+        # Lay the row out first: the panel is sized to it.
+        items: list = []
+        x = self.PAD_X
+        items.append(("heart", x))
+        x += self.HEART + self.GAP
+        hr_text = str(self.hr) if self.hr else "--"
+        items.append(("text", x, hr_text, f.value, brand.INK))
+        x += f.value.measure(hr_text) + self.GAP
+        items.append(("text", x, "bpm", f.unit, brand.INK_MUTED))
+        x += f.unit.measure("bpm") + self.METRIC_GAP
+        items.append(("divider", x))
+        x += 1 + self.METRIC_GAP
         if self.spo2:
             spo2_color, marker = brand.spo2_severity(self.spo2)
-            x = self._text(x, baseline, f"{self.spo2}%", f.value, spo2_color)
+            items.append(("text", x, f"{self.spo2}%", f.value, spo2_color))
+            x += f.value.measure(f"{self.spo2}%")
             if marker:
-                self.create_text(
-                    x + 3, baseline - f.value.metrics("ascent") + 4, text=marker, font=f.marker,
-                    fill=self.color(spo2_color), anchor="nw",
-                )
+                items.append(("marker", x + 3, marker, spo2_color))
                 x += 3 + f.marker.measure(marker)
         else:
-            x = self._text(x, baseline, "--", f.value, brand.INK)
-        x = self._text(x + 8, baseline, "SpO₂", f.unit, brand.INK_MUTED)
+            items.append(("text", x, "--", f.value, brand.INK))
+            x += f.value.measure("--")
+        x += self.GAP
+        items.append(("text", x, "SpO₂", f.unit, brand.INK_MUTED))
+        row_right = x + f.unit.measure("SpO₂")
+        self.panel_width = row_right + self.PAD_X
 
-        # Right-aligned status, cut to the room left of it so a long device
-        # name can't run back over the numbers.
+        smooth_shape(self, brand.rounded_rect_points(0.5, 0.5, self.panel_width - 0.5, h - 0.5, self.RADIUS), brand.PANEL)
+        for item in items:
+            kind = item[0]
+            if kind == "heart":
+                # The overlay aligns the icon's box to the numbers' baseline.
+                self.create_image(item[1], baseline + 3, image=self.heart_images[self.stale], anchor="sw")
+            elif kind == "text":
+                _kind, ix, text, font, color = item
+                self._text(ix, baseline, text, font, color)
+            elif kind == "divider":
+                self.create_line(item[1], mid - self.DIVIDER_H / 2, item[1], mid + self.DIVIDER_H / 2, fill=self.color(brand.DIVIDER))
+            elif kind == "marker":
+                _kind, ix, marker, color = item
+                self.create_text(ix, baseline - ascent + 4, text=marker, font=f.marker, fill=self.color(color), anchor="nw")
+
+        self.trend_box = (self.PAD_X, top + self.ROW_H + self.GAP, row_right - self.PAD_X, self.TREND_H)
+        self._draw_trend(*self.trend_box)
+
+        # Status beside the panel, cut to the room that's left.
         line_h = f.small.metrics("linespace")
-        y = mid - (2 * line_h + 2) / 2
-        right = w - self.PAD_SIDE
-        room = max(right - x - 16, 0)
-        for i, (text, color) in enumerate(((self.state_line, brand.INK), (self.source_line, brand.INK_MUTED))):
-            self.create_text(
-                right, y + i * (line_h + 2), text=fit_text(text, f.small, room), font=f.small,
-                fill=self.color(color), anchor="ne",
-            )
-
-        self._draw_trend(self.PAD_SIDE, top + self.row_h + self.TREND_GAP, w - 2 * self.PAD_SIDE, self.TREND_H)
+        sx = self.panel_width + self.STATUS_GAP
+        room = max(w - sx, 0)
+        y = h / 2 - (2 * line_h + 2) / 2
+        for i, (text, color) in enumerate(((self.state_line, STATUS_COLOR), (self.source_line, STATUS_SECONDARY))):
+            self.create_text(sx, y + i * (line_h + 2), text=fit_text(text, f.small, room), font=f.small, fill=color, anchor="nw")
 
     def _text(self, x: float, baseline: float, text: str, font: tkfont.Font, color: str) -> float:
         """Draw ``text`` on ``baseline``; return the x just after it."""

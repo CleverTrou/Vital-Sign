@@ -117,15 +117,17 @@ connections for Python if the firewall asks.
 
 ## Control app
 
-![The Vital Sign control window: status and Start/Stop at the top, a live readout like the overlay's, the source list, and a collapsed log](docs/control-window.png)
+![The Vital Sign control window: status and Start/Stop at the top, the overlay's panel with the connection status beside it, the source list, and a collapsed log](docs/control-window.png)
 
 A small window for starting and stopping the bridge, watching the live
 numbers, and choosing sources without editing files. From the top:
 
 - **Header:** the bridge's status, Restart, and one Start/Stop button.
-- **Readout:** the same panel the overlay shows -- heart rate, SpO2 with
-  its severity color and marker, a 5-minute trend, and which source each
-  number comes from. It dims when readings stop, like the overlay.
+- **Readout:** a smaller copy of the overlay exactly as OBS shows it --
+  heart rate, SpO2 with its severity color and marker, and the 5-minute
+  trend, sized to its numbers. Beside it: the connection status and which
+  source each number comes from. It dims when readings stop, like the
+  overlay.
 - **Sources:** top is preferred, the rest are fallbacks. Scan for Bluetooth
   devices, add Apple Watch (HDS) or demo readings from **Add**, reorder with
   ↑/↓, remove. With HDS listed, the exact address to give the watch app is

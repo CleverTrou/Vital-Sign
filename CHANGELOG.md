@@ -43,9 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of exiting. If several are in range, it lists them and waits
   for you to pick one. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - Requires Python 3.11 or newer. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
-- New look for the control window: the overlay's own readout panel with its
-  trend line, one Start/Stop button, a sources table, and a log that stays
-  collapsed until you need it. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
+- New look for the control window: a copy of the overlay panel as OBS shows
+  it, with the connection status beside it, one Start/Stop button, a sources
+  table, and a log that stays collapsed until you need it. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 - The control window, the overlay's numbers and the wordmark use Atkinson
   Hyperlegible, a typeface designed for legibility. It's bundled and loaded
   only by Vital Sign; nothing is installed system-wide. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
