@@ -1,3 +1,6 @@
+<!-- markdownlint-disable-next-line MD033 MD041 -->
+<img src="assets/icon/vitalsign-256.png" width="96" height="96" alt="Vital Sign icon: a heart inside a green ring">
+
 # Vital Sign
 
 Live heart rate + SpO2 overlay for OBS, read directly from your own devices:
@@ -114,13 +117,29 @@ connections for Python if the firewall asks.
 
 ## Control app
 
+![The Vital Sign control window: status and Start/Stop at the top, a live readout like the overlay's, the source list, and a collapsed log](docs/control-window.png)
+
 A small window for starting and stopping the bridge, watching the live
-numbers, and choosing sources (scan, add, reorder, remove) without
-editing files:
+numbers, and choosing sources without editing files. From the top:
+
+- **Header:** the bridge's status, Restart, and one Start/Stop button.
+- **Readout:** the same panel the overlay shows -- heart rate, SpO2 with
+  its severity color and marker, a 5-minute trend, and which source each
+  number comes from. It dims when readings stop, like the overlay.
+- **Sources:** top is preferred, the rest are fallbacks. Scan for Bluetooth
+  devices, add Apple Watch (HDS) or demo readings from **Add**, reorder with
+  ↑/↓, remove. With HDS listed, the exact address to give the watch app is
+  shown underneath.
+- **Recent log:** the latest line; click it to expand the last few.
+
+To open it:
 
 - **macOS:** open `Vital Sign.app` in this folder.
-- **Windows:** double-click `Vital Sign.cmd`. (Unverified on real Windows
-  so far, like the rest of the Windows support.)
+- **Windows:** double-click `Vital Sign.cmd`, or run
+  `powershell.exe -ExecutionPolicy Bypass -File create_shortcut.ps1` once
+  for "Vital Sign" shortcuts (here and on the Desktop) that carry the app
+  icon. (Unverified on real Windows so far, like the rest of the Windows
+  support.)
 - **Any platform:** `.venv/bin/python3 gui.py`.
 
 It's a front end to the same pieces OBS automation uses: source changes are
@@ -136,6 +155,38 @@ scan or the bridge runs from the app, for the same reason
 Accessibility caveat: the window is built with Tk, whose current version
 doesn't expose its controls to VoiceOver or other assistive tech. Everything
 it does is also available from the command line and the config files.
+
+## Brand
+
+![The macOS icon in its six appearances: Default, Dark, Clear light, Clear dark, Tinted light, Tinted dark](assets/icon/appearances.png)
+
+**Icon.** The overlay's heart inside a green SpO2-style gauge, on a midnight
+plate. The gauge is decorative and never shows live data.
+
+- macOS 26 and later get a layered [Icon Composer](https://developer.apple.com/icon-composer/)
+  icon (`assets/icon/VitalSign.icon`) that follows the system's Default,
+  Dark, Clear and Tinted appearances (above). macOS 11-15 show its Default
+  rendering.
+- `assets/icon/vitalsign.icns` (classic macOS) and `vitalsign.ico` (Windows,
+  with simplified art at 16-24 px) come from the SVG masters in
+  `assets/icon/src/`.
+- To change the icon, edit the sources and run `python3 tools/build_icons.py`
+  (macOS with Xcode 26+, `librsvg` and ImageMagick). It regenerates every
+  icon file and installs them into both app bundles.
+
+**Type.** [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/),
+designed by the Braille Institute for readers with low vision, for the
+wordmark, the control window and the overlay's numbers. It's bundled in
+`assets/fonts/` (SIL Open Font License, `OFL.txt`) and loaded only by Vital
+Sign itself: the control window registers it for its own process, and the
+overlay loads it by relative path. Nothing is installed system-wide, and
+both fall back to the system font if it's missing. Logs and source
+addresses stay monospaced (Menlo / Consolas).
+
+**Color.** One brand color, Pulse `#ff4d6d`, used for heart rate and the
+mark. Green, yellow and red mean SpO2 severity and nothing else, so the
+brand never reads as a warning. The overlay itself stays unbranded: no
+logo or wordmark over a streamer's content.
 
 ## How it works
 
@@ -492,7 +543,9 @@ connection attempt happened at all.
 
 `overlay.html` is a single file — edit the CSS variables at the top
 (`--hr-color`, `--spo2-good/warn/bad`) or the layout directly. No build step;
-just refresh the OBS browser source after saving.
+just refresh the OBS browser source after saving. To use a different
+typeface, change `body`'s `font-family` (and drop the `@font-face` rules if
+you no longer want the bundled one).
 
 Everything (the panel and the status pill) lives inside `#stage`, which
 `rescaleStage()` scales and centers as one unit to fit whatever OBS
@@ -610,6 +663,10 @@ usefully anyway; the current BPM value carries the information.
   app whose local-network message format the `hds` source accepts.
 - [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) —
   the OBS plugin used for scene-triggered automation.
+- [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/)
+  (Braille Institute, SIL Open Font License 1.1) — the bundled typeface.
+- The icon and control-window design are original artwork made for this
+  project with Claude Design.
 
 ## License
 

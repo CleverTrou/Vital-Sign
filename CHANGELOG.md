@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that OBS automation uses. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
 - `--list-devices --json` for machine-readable scan results. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
 - Setup steps for the ECHO iPhone relay app. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
+- An app icon: a heart inside a green ring. On macOS 26 and later it follows
+  the system's Dark, Clear and Tinted icon styles; Windows gets a matching
+  `.ico`, and `create_shortcut.ps1` makes shortcuts that use it.
 
 ### Changed
 
@@ -40,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of exiting. If several are in range, it lists them and waits
   for you to pick one. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - Requires Python 3.11 or newer. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
+- New look for the control window: the overlay's own readout panel with its
+  trend line, one Start/Stop button, a sources table, and a log that stays
+  collapsed until you need it.
+- The control window, the overlay's numbers and the wordmark use Atkinson
+  Hyperlegible, a typeface designed for legibility. It's bundled and loaded
+  only by Vital Sign; nothing is installed system-wide.
 
 ## [0.2.0] - 2026-07-26
 

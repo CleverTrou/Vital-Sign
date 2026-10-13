@@ -19,6 +19,19 @@
 <meta charset="utf-8">
 <title>Vital Sign Overlay</title>
 <style>
+  /* The brand typeface, bundled in assets/fonts/ and loaded by relative
+     path, so the overlay still makes no network requests. If it can't
+     load, the system fonts after it in the stack take over. */
+  @font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-weight: 400;
+    src: url("assets/fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-weight: 700;
+    src: url("assets/fonts/AtkinsonHyperlegible-Bold.ttf") format("truetype");
+  }
   :root {
     --hr-color: #ff4d6d;
     --spo2-good: #4ade80;
@@ -35,7 +48,7 @@
   }
   body {
     height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-family: "Atkinson Hyperlegible", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
   /* Wraps .panel + .status so both scale and center together as one unit.
      #stage previously didn't exist -- .panel was centered directly and
