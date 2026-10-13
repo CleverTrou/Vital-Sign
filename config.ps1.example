@@ -2,7 +2,7 @@
 # file at all. bridge.py auto-discovers a supported device over BLE if you
 # don't configure one, which is fine as long as exactly one is in range.
 # Copy this file to config.ps1 only if you want to:
-#   - combine sources, e.g. a ring with an Apple Watch fallback, or
+#   - combine sources, e.g. a ring with a watch fallback, or
 #   - skip the ~10s discovery scan on every start (faster reconnects), or
 #   - pin a specific device because more than one is in range
 #
@@ -16,7 +16,7 @@
 # every option. Find your device's exact value (it prints one per device
 # in range) with:
 #   .venv\Scripts\python.exe bridge.py --list-devices
-# $Sources = @("viatom:REPLACE_ME", "hds")   # ring first, Apple Watch (HDS) fallback
+# $Sources = @("viatom:REPLACE_ME", "hds")   # ring first, watch (HDS app) fallback
 
 # Older single-device setting, still honored: the same as auto:ADDRESS.
 # $Address = "REPLACE_ME"

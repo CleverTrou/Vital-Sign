@@ -4,6 +4,10 @@
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>VitalSign</string>
+	<key>CFBundleIconFile</key>
+	<string>vitalsign</string>
+	<key>CFBundleIconName</key>
+	<string>VitalSign</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.vitalsign.app</string>
 	<key>CFBundleName</key>

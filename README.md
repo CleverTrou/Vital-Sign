@@ -1,14 +1,17 @@
+<!-- markdownlint-disable-next-line MD033 MD041 -->
+<img src="assets/icon/vitalsign-256.png" width="96" height="96" alt="Vital Sign icon: a heart inside a green ring">
+
 # Vital Sign
 
 Live heart rate + SpO2 overlay for OBS, read directly from your own devices:
 Viatom/Wellue rings and fingertip oximeters, any standard Bluetooth
-heart-rate strap or pulse oximeter, and Apple Watch. No cloud service, no
+heart-rate strap or pulse oximeter, and smartwatches. No cloud service, no
 account, no Pulsoid.
 
 ```text
 ring / oximeter / strap --BLE------\
                                     bridge.py --WebSocket--> overlay.html (OBS Browser Source)
-Apple Watch (HDS app) --your Wi-Fi-/
+watch (HDS app) -------your Wi-Fi-/
 ```
 
 > This is a hobby project for putting vitals on a stream overlay, not a
@@ -32,8 +35,8 @@ OBS only the panel itself is visible over your stream/game.*
 | Viatom PC-60FW fingertip oximeter and OEM twins (OxySmart, ...) | `pc60` | HR + SpO2 | Decoder tested against frames captured from a real PC-60FW; untested on a device here |
 | Pulse oximeters with the standard Bluetooth PLX service | `plx` | HR + SpO2 | Built from the Bluetooth spec; untested |
 | Heart-rate straps and watches with the standard Bluetooth heart-rate service (Polar, Garmin HRM, Wahoo, Coospo, watches in "broadcast HR" mode...) | `hrs` | HR | Connection verified against the O2 Max's own heart-rate service |
-| Apple Watch via an iPhone relay app (see [Apple Watch](#apple-watch)) | `hrs` | HR | Same code path as any heart-rate strap |
-| Apple Watch via the Health Data Server app | `hds` | HR | Tested with simulated requests in the app's format |
+| Smartwatches that broadcast heart rate over Bluetooth: Garmin (built in), Wear OS and others through a broadcast app, Apple Watch through an iPhone relay app (see [Smartwatches](#smartwatches)) | `hrs` | HR | Same code path as any heart-rate strap; the apps themselves untested here |
+| Apple Watch, or Wear OS where the app supports the watch, via the Health Data Server app | `hds` | HR | Tested with simulated requests in the format HDS's own receiver accepts; untested with the real app |
 | None (simulated readings) | `demo` | HR + SpO2 | For laying out the overlay without hardware |
 
 Every Viatom ring also offers the standard heart-rate service, so `hrs`
@@ -75,25 +78,25 @@ rate within a couple of seconds and shows `--` for SpO2. It switches back
 as soon as the ring has a reading again. "Live" means a reading within the
 last 15 seconds (`--fresh-seconds`).
 
-## Apple Watch
+## Smartwatches
 
-An Apple Watch can't stream SpO2 -- it only takes occasional background
-spot checks -- so it supplies heart rate only. There are two ways to get
-it to the bridge, neither involving Pulsoid:
+Watches supply heart rate only: neither route below carries SpO2, which
+watches measure in occasional spot checks or during sleep rather than as a
+live stream. There are two ways to get a watch's heart rate to the bridge,
+neither involving Pulsoid.
 
-1. **Health Data Server (HDS) app** -- `--source hds`. The watch app sends
-   each reading straight to your computer over Wi-Fi. In the watch app,
-   set the server to `http://<this computer's IP>:3476` -- LAN or Tailscale
-   IP, *with* the `http://` -- then press start. (The control app shows the
-   exact address to use.) This is the same thing the app's own desktop
-   receiver ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
-   `bridge.py` replaces it. HDS is a paid watch app. Not yet confirmed with
-   the real app: on one watch it crashed on start with "Bad URL" when given
-   an address without `http://`.
-2. **An iPhone relay app** -- `--source hrs`. Apps such as ECHO, HeartCast or
-   HR Broadcast make your iPhone pose as a standard Bluetooth heart-rate
-   sensor, fed by the watch. These are third-party apps; this project
-   hasn't tested them individually. With ECHO, for example:
+1. **Bluetooth heart-rate broadcast** -- `--source hrs`. The most widely
+   compatible route, and the same code path as a chest strap: anything that
+   presents the standard Bluetooth heart-rate service works.
+   - **Garmin** watches have it built in (*Broadcast Heart Rate*).
+   - **Wear OS, Galaxy** and other watches need a heart-rate broadcast app
+     from their app store.
+   - **Apple Watch** can't broadcast on its own, so an iPhone relay app
+     (ECHO, HeartCast, HR Broadcast...) poses as the heart-rate sensor,
+     fed by the watch.
+
+   These are third-party features and apps that this project hasn't tested
+   individually. With ECHO for Apple Watch, for example:
    1. Install ECHO on the iPhone (its watch app installs alongside).
    2. Start a workout in ECHO so it begins broadcasting, and keep ECHO open
       on the iPhone the first time: iOS limits what a backgrounded app can
@@ -106,6 +109,20 @@ it to the bridge, neither involving Pulsoid:
 
    ECHO's free tier stops each workout at 20 minutes; Echo Pro removes that.
    ECHO ends its broadcast if another workout app starts on the watch.
+2. **Health Data Server (HDS) app** -- `--source hds`. The watch sends each
+   reading straight to your computer over Wi-Fi, so it doesn't have to be in
+   Bluetooth range. In the watch app, set the server to
+   `http://<this computer's IP>:3476` -- LAN or Tailscale IP, *with* the
+   `http://` -- then press start. (The control app shows the exact address
+   to use.) This is the same thing the app's own desktop receiver
+   ([hds_desktop](https://github.com/Rexios80/hds_desktop)) does;
+   `bridge.py` replaces it. HDS is a paid app for **Apple Watch** and
+   **Wear OS**, with a caveat for Wear OS: the HDS project says its Wear OS
+   app works on Wear OS 2 and sends heart rate only, and most current Wear
+   OS watches (Pixel Watch, Galaxy Watch4 and later) run Wear OS 3 or newer
+   -- so check that it supports yours, or use option 1. Not yet confirmed
+   with the real app on either platform: on one Apple Watch it crashed on
+   start with "Bad URL" when given an address without `http://`.
 
 HDS sends over the network, so `bridge.py` has to accept incoming
 connections for it -- see [Security & privacy](#security--privacy) for what
@@ -114,13 +131,31 @@ connections for Python if the firewall asks.
 
 ## Control app
 
+![The Vital Sign control window: status and Start/Stop at the top, the overlay's panel with the connection status beside it, the source list, and a collapsed log](docs/control-window.png)
+
 A small window for starting and stopping the bridge, watching the live
-numbers, and choosing sources (scan, add, reorder, remove) without
-editing files:
+numbers, and choosing sources without editing files. From the top:
+
+- **Header:** the bridge's status, Restart, and one Start/Stop button.
+- **Readout:** a smaller copy of the overlay exactly as OBS shows it --
+  heart rate, SpO2 with its severity color and marker, and the 5-minute
+  trend, sized to its numbers. Beside it: the connection status and which
+  source each number comes from. It dims when readings stop, like the
+  overlay.
+- **Sources:** top is preferred, the rest are fallbacks. Scan for Bluetooth
+  devices, add a watch (HDS app) or demo readings from **Add**, reorder with
+  ↑/↓, remove. With HDS listed, the exact address to give the watch app is
+  shown underneath.
+- **Recent log:** the latest line; click it to expand the last few.
+
+To open it:
 
 - **macOS:** open `Vital Sign.app` in this folder.
-- **Windows:** double-click `Vital Sign.cmd`. (Unverified on real Windows
-  so far, like the rest of the Windows support.)
+- **Windows:** double-click `Vital Sign.cmd`, or run
+  `powershell.exe -ExecutionPolicy Bypass -File create_shortcut.ps1` once
+  for "Vital Sign" shortcuts (here and on the Desktop) that carry the app
+  icon. (Unverified on real Windows so far, like the rest of the Windows
+  support.)
 - **Any platform:** `.venv/bin/python3 gui.py`.
 
 It's a front end to the same pieces OBS automation uses: source changes are
@@ -136,6 +171,38 @@ scan or the bridge runs from the app, for the same reason
 Accessibility caveat: the window is built with Tk, whose current version
 doesn't expose its controls to VoiceOver or other assistive tech. Everything
 it does is also available from the command line and the config files.
+
+## Brand
+
+![The macOS icon in its six appearances: Default, Dark, Clear light, Clear dark, Tinted light, Tinted dark](assets/icon/appearances.png)
+
+**Icon.** The overlay's heart inside a green SpO2-style gauge, on a midnight
+plate. The gauge is decorative and never shows live data.
+
+- macOS 26 and later get a layered [Icon Composer](https://developer.apple.com/icon-composer/)
+  icon (`assets/icon/VitalSign.icon`) that follows the system's Default,
+  Dark, Clear and Tinted appearances (above). macOS 11-15 show its Default
+  rendering.
+- `assets/icon/vitalsign.icns` (classic macOS) and `vitalsign.ico` (Windows,
+  with simplified art at 16-24 px) come from the SVG masters in
+  `assets/icon/src/`.
+- To change the icon, edit the sources and run `python3 tools/build_icons.py`
+  (macOS with Xcode 26+, `librsvg` and ImageMagick). It regenerates every
+  icon file and installs them into both app bundles.
+
+**Type.** [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/),
+designed by the Braille Institute for readers with low vision, for the
+wordmark, the control window and the overlay's numbers. It's bundled in
+`assets/fonts/` (SIL Open Font License, `OFL.txt`) and loaded only by Vital
+Sign itself: the control window registers it for its own process, and the
+overlay loads it by relative path. Nothing is installed system-wide, and
+both fall back to the system font if it's missing. Logs and source
+addresses stay monospaced (Menlo / Consolas).
+
+**Color.** One brand color, Pulse `#ff4d6d`, used for heart rate and the
+mark. Green, yellow and red mean SpO2 severity and nothing else, so the
+brand never reads as a warning. The overlay itself stays unbranded: no
+logo or wordmark over a streamer's content.
 
 ## How it works
 
@@ -169,8 +236,9 @@ it does is also available from the command line and the config files.
 - A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
   client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
   keeps a rolling window of the same readings it already gets over the
-  WebSocket. A freshly (re)loaded overlay starts with an empty graph and
-  builds up over the next 5 minutes; nothing survives a reload. The window
+  WebSocket. A freshly (re)loaded overlay starts with an empty graph that
+  spans the full width from its first readings, and settles into a rolling
+  5-minute window once it has that much history; nothing survives a reload. The window
   length lives in one constant (`TREND_WINDOW_MS`) if you want it longer
   or shorter.
 
@@ -227,7 +295,7 @@ use for each:
 
 ```bash
 python3 bridge.py --list-devices
-python3 bridge.py --source viatom:<ADDRESS> --source hds   # e.g. ring + Apple Watch fallback
+python3 bridge.py --source viatom:<ADDRESS> --source hds   # e.g. ring + watch fallback
 python3 bridge.py --source demo                          # no hardware: simulated readings
 ```
 
@@ -455,7 +523,7 @@ connection attempt happened at all.
 - **"has no oxyii service … try --source viatom:…"** (or similar): the
   `--source` type you forced doesn't match the device; use the one
   suggested.
-- **Apple Watch (HDS) readings never arrive**: check the watch app's server
+- **HDS watch readings never arrive**: check the watch app's server
   address is this computer's current IP and port `3476`, that both are on
   the same network (or Tailscale), and that the firewall allows incoming
   connections for Python. `bridge.log` says "rejected a request from …" if
@@ -492,7 +560,9 @@ connection attempt happened at all.
 
 `overlay.html` is a single file — edit the CSS variables at the top
 (`--hr-color`, `--spo2-good/warn/bad`) or the layout directly. No build step;
-just refresh the OBS browser source after saving.
+just refresh the OBS browser source after saving. To use a different
+typeface, change `body`'s `font-family` (and drop the `@font-face` rules if
+you no longer want the bundled one).
 
 Everything (the panel and the status pill) lives inside `#stage`, which
 `rescaleStage()` scales and centers as one unit to fit whatever OBS
@@ -610,6 +680,10 @@ usefully anyway; the current BPM value carries the information.
   app whose local-network message format the `hds` source accepts.
 - [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) —
   the OBS plugin used for scene-triggered automation.
+- [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/)
+  (Braille Institute, SIL Open Font License 1.1) — the bundled typeface.
+- The icon and control-window design are original artwork made for this
+  project with Claude Design.
 
 ## License
 

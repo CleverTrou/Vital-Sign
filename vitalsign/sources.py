@@ -24,12 +24,13 @@ value, so later sources act as fallbacks. Default: auto.
   KIND[:ADDRESS]    force a protocol: viatom (Checkme O2 Max, O2Ring...),
                     oxyii (O2Ring S...), pc60 (PC-60FW fingertip),
                     plx (standard pulse oximeter), hrs (standard heart-rate
-                    sensor: straps, watches, Apple Watch relay apps)
+                    sensor: straps, watches broadcasting heart rate,
+                    phone relay apps)
   hds[:PORT]        receive heart rate from the Health Data Server watch
                     app over your network (default port 3476)
   demo              simulated readings, for setting up the overlay
 
-Example: --source viatom --source hds   (ring first, Apple Watch fallback)"""
+Example: --source viatom --source hds   (ring first, watch fallback)"""
 
 
 @dataclass(frozen=True)
