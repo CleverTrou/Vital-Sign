@@ -336,6 +336,10 @@ class App:
 
         root.title("Vital Sign")
         root.minsize(560, 470)
+        # macOS sends this when the app is opened again while it's running
+        # (a second double-click, or its Dock icon), including when the
+        # window is minimized or behind others.
+        root.createcommand("::tk::mac::ReopenApplication", self.show)
         self._set_window_icon()
         self._build()
         self._refresh_sources()
@@ -344,6 +348,12 @@ class App:
         self._poll()
 
     # -- layout -------------------------------------------------------
+
+    def show(self) -> None:
+        """Bring the window forward, restoring it if it was minimized."""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
     def _set_window_icon(self) -> None:
         try:

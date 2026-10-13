@@ -17,4 +17,28 @@
 # TCC evaluates instead of OBS's. Everything this script spawns inherits
 # that identity.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-exec "$DIR/start_bridge.sh"
+
+"$DIR/start_bridge.sh"
+status=$?
+
+# Double-clicking this app (from Finder, the Dock or Spotlight) should show
+# the control window rather than do nothing. OBS reaches this same app
+# through `open -a`, which looks identical from in here except for who
+# launched it: LaunchServices records the launching app as LSParentASN, and
+# for `open` that is never Finder, the Dock or Spotlight. So the window
+# opens only for a person, and OBS's starts stay headless.
+launched_by_a_person() {
+  local parent id asn
+  parent=$(lsappinfo info -only LSParentASN "$$" 2>/dev/null | grep -o 'ASN:0x[0-9a-fA-F]*-0x[0-9a-fA-F]*' | head -1)
+  [[ -n "$parent" ]] || return 1
+  for id in com.apple.finder com.apple.dock com.apple.Spotlight; do
+    asn=$(lsappinfo find "bundleid=$id" 2>/dev/null | grep -o 'ASN:0x[0-9a-fA-F]*-0x[0-9a-fA-F]*' | head -1)
+    [[ -n "$asn" && "$asn" == "$parent" ]] && return 0
+  done
+  return 1
+}
+
+if launched_by_a_person; then
+  open "$DIR/Vital Sign.app"
+fi
+exit "$status"
