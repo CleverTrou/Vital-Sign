@@ -84,6 +84,49 @@ class GuiTest(unittest.TestCase):
         self.assertEqual(self.app.settings.sources, ["hds"])
         self.assertEqual(len(self.rows()), 1)
 
+    def _press_start(self):
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showinfo"
+        ) as notice:
+            self.app.start()
+        return run, notice
+
+    def test_start_with_a_matching_file_just_starts(self):
+        self.app._add("hds")
+        run, notice = self._press_start()
+        run.assert_called_once_with("Starting…", "start_bridge")
+        notice.assert_not_called()
+
+    def test_start_restores_a_missing_file_from_the_window(self):
+        self.app._add("hds")
+        self.gui.CONFIG.unlink()
+        run, notice = self._press_start()
+        self.assertIn('SOURCES="hds"', self.gui.CONFIG.read_text())
+        notice.assert_called_once()
+        run.assert_called_once()
+
+    def test_start_adopts_a_file_changed_elsewhere_and_holds_back(self):
+        self.app._add("hds")
+        self.gui.write_sources(self.gui.CONFIG, ["demo"])
+        run, notice = self._press_start()
+        self.assertEqual(self.app.settings.sources, ["demo"])
+        self.assertEqual([r[1] for r in self.rows()], ["Demo readings"])
+        notice.assert_called_once()
+        run.assert_not_called()
+
+    def test_restart_does_not_stop_the_bridge_when_it_will_not_start(self):
+        self.app._add("hds")
+        self.gui.write_sources(self.gui.CONFIG, [])
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(self.gui.messagebox, "showinfo"):
+            self.app.restart()
+        run.assert_not_called()
+
+    def test_start_with_no_sources_and_no_file_just_starts(self):
+        run, notice = self._press_start()
+        run.assert_called_once()
+        notice.assert_not_called()
+        self.assertFalse(self.gui.CONFIG.exists())
+
     def test_start_stop_is_one_button(self):
         self.app._update_status()
         self.assertEqual(self.app.status.cget("text"), "○ Stopped")

@@ -569,14 +569,55 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _matches_saved_settings(self) -> bool:
+        """Check, before (re)starting, that the file the bridge will read
+        agrees with the list this window shows.
+
+        The start script reads config.sh, not this window, and a window left
+        open can go stale (the file deleted, or edited by hand or by another
+        copy of the app). A missing file is restored from the window, since
+        nobody chose to empty it and starting without it would silently
+        scan for any Bluetooth device. A file that exists but differs wins,
+        because it is what OBS's automation starts with; the window is
+        updated to match and the start is held back so the list can be
+        checked first.
+        """
+        try:
+            if not CONFIG.exists():
+                if not self.settings.sources:
+                    return True
+                write_sources(CONFIG, self.settings.sources)
+                messagebox.showinfo(
+                    "Vital Sign",
+                    f"{CONFIG.name} was missing, so the bridge would have scanned for any Bluetooth "
+                    "device instead of using the sources listed here. It has been restored from this window.",
+                )
+                return True
+            saved = read_settings(CONFIG).sources
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Vital Sign", f"Couldn't check {CONFIG.name}:\n{e}")
+            return False
+        if saved == self.settings.sources:
+            return True
+        self.settings.sources = saved
+        self._refresh_sources()
+        messagebox.showinfo(
+            "Vital Sign",
+            f"{CONFIG.name} was changed outside this window, so the source list now shows what is saved. "
+            "Check it, then press Start again.",
+        )
+        return False
+
     def start(self) -> None:
-        self._in_background("Starting…", "start_bridge")
+        if self._matches_saved_settings():
+            self._in_background("Starting…", "start_bridge")
 
     def stop(self) -> None:
         self._in_background("Stopping…", "stop_bridge")
 
     def restart(self) -> None:
-        self._in_background("Restarting…", "stop_bridge", "start_bridge")
+        if self._matches_saved_settings():
+            self._in_background("Restarting…", "stop_bridge", "start_bridge")
 
     def _stoppable(self) -> bool:
         return self.bridge_up or PIDFILE.exists()
