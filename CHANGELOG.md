@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup steps for the ECHO iPhone relay app. ([#8](https://github.com/CleverTrou/Vital-Sign/pull/8))
 - An app icon: a heart inside a green ring. On macOS 26 and later it follows
   the system's Dark, Clear and Tinted icon styles; Windows gets a matching
-  `.ico`, and `create_shortcut.ps1` makes shortcuts that use it.
+  `.ico`, and `create_shortcut.ps1` makes shortcuts that use it. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 
 ### Changed
 
@@ -45,18 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requires Python 3.11 or newer. ([#7](https://github.com/CleverTrou/Vital-Sign/pull/7))
 - New look for the control window: the overlay's own readout panel with its
   trend line, one Start/Stop button, a sources table, and a log that stays
-  collapsed until you need it.
+  collapsed until you need it. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 - The control window, the overlay's numbers and the wordmark use Atkinson
   Hyperlegible, a typeface designed for legibility. It's bundled and loaded
-  only by Vital Sign; nothing is installed system-wide.
+  only by Vital Sign; nothing is installed system-wide. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 - The heart-rate trend spans the full width from its first readings, then
   settles into a rolling 5-minute window. It used to start squeezed against
-  the right edge until 5 minutes had passed.
+  the right edge until 5 minutes had passed. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 
 ### Fixed
 
 - On macOS, the control window could hang on open after it had been
-  force-quit, waiting on a window-restore prompt that never appeared.
+  force-quit, waiting on a window-restore prompt that never appeared. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 
 ## [0.2.0] - 2026-07-26
 
