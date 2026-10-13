@@ -414,7 +414,11 @@
     const h = hrTrend.clientHeight || 1;
     const pad = 4; // keep the line/dot from clipping at the very edge
     const now = Date.now();
-    const oldestT = now - TREND_WINDOW_MS;
+    // Span the oldest point to now, so a freshly (re)loaded overlay's trend
+    // fills the width instead of starting squeezed against the right edge;
+    // it settles into a rolling TREND_WINDOW_MS once it has that much.
+    const oldestT = hrHistory[0].t;
+    const windowMs = Math.max(now - oldestT, 1000);
     const hrs = hrHistory.map((p) => p.hr);
     const minHr = Math.min(...hrs);
     const maxHr = Math.max(...hrs);
@@ -424,7 +428,7 @@
     const range = Math.max(maxHr - minHr, 1);
 
     const points = hrHistory.map((p) => {
-      const x = pad + ((p.t - oldestT) / TREND_WINDOW_MS) * (w - pad * 2);
+      const x = pad + ((p.t - oldestT) / windowMs) * (w - pad * 2);
       const y = pad + (1 - (p.hr - minHr) / range) * (h - pad * 2);
       return [x, y];
     });

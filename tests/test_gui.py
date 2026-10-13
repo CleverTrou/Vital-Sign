@@ -5,9 +5,15 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import gui
+
 try:
     import tkinter as tk
 
+    # Without this, a pending macOS window-restore prompt can hang Tk() --
+    # see skip_window_restoration's docstring. Skip rather than risk it.
+    if not gui.skip_window_restoration():
+        raise RuntimeError("can't suppress the window-restore prompt")
     _root = tk.Tk()
     _root.destroy()
     HAVE_DISPLAY = True
@@ -98,7 +104,35 @@ class GuiTest(unittest.TestCase):
         self.assertEqual((r.hr, r.spo2, r.source_line, r.stale), (66, 91, "from Ring", False))
         self.assertEqual(len(r.history), 1)
         self.app._show_reading({"type": "reading", "worn": False, "source": "Ring"})
-        self.assertEqual((r.hr, r.state_line), (None, "Not worn"))
+        self.assertEqual((r.hr, r.state_line, r.stale), (None, "Not worn", False))
+
+    def test_long_source_names_stop_short_of_the_numbers(self):
+        r = self.app.readout
+        r.winfo_width = lambda: 552
+        self.app.bridge_up = True
+        name = "A Very Long Bluetooth Device Name That Goes On " * 3
+        self.app._show_reading({"type": "reading", "hr": 100, "spo2": 100, "worn": True, "hr_source": name})
+        spo2_unit = next(i for i in r.find_all() if r.type(i) == "text" and r.itemcget(i, "text") == "SpO₂")
+        source = next(i for i in r.find_all() if r.type(i) == "text" and r.itemcget(i, "text").startswith("from"))
+        self.assertTrue(r.itemcget(source, "text").endswith("…"))
+        # The source line's left edge stays right of the SpO2 label's right edge.
+        unit_right = r.coords(spo2_unit)[0] + self.app.fonts.unit.measure("SpO₂")
+        source_left = r.coords(source)[0] - self.app.fonts.small.measure(r.itemcget(source, "text"))
+        self.assertGreater(source_left, unit_right)
+
+    def test_trend_spans_the_width_from_its_first_reading(self):
+        r = self.app.readout
+        # The window is withdrawn in tests, so give the canvas its width
+        # directly: forcing a layout pass (update_idletasks) on a hidden
+        # canvas crashes Tk 9 on macOS.
+        r.winfo_width = lambda: 552
+        now = self.gui.time.monotonic()
+        r.history = [(now - 20, 70), (now - 10, 75), (now, 72)]
+        r.redraw()
+        line = [i for i in r.find_all() if r.type(i) == "line" and len(r.coords(i)) == 6]
+        xs = r.coords(line[-1])[0::2]
+        self.assertAlmostEqual(xs[0], r.PAD_SIDE + 4, delta=1)  # first reading at the left edge...
+        self.assertAlmostEqual(xs[-1], 552 - r.PAD_SIDE - 4, delta=2)  # ...newest at the right
 
     def test_log_summary_line(self):
         line, color = self.gui.short_log_line("2026-10-11 21:20:58,376 INFO Overlay connected (1 total)")

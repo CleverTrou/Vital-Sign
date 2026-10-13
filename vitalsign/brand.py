@@ -1,7 +1,6 @@
-"""Brand tokens, the bundled typeface, and vector shapes for the control app.
+"""Brand tokens, the bundled typeface, and shapes for the control app.
 
-Colors and type come from the design handoff (README "Brand"); the heart
-is the same path overlay.html draws, so the app and the overlay match.
+Colors and type come from the design handoff (README "Brand").
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ FONT_DIR = ROOT / "assets" / "fonts"
 ICON_DIR = ROOT / "assets" / "icon"
 ICON_PNG = ICON_DIR / "vitalsign-256.png"
 ICON_ICO = ICON_DIR / "vitalsign.ico"
+UI_DIR = ICON_DIR / "ui"  # 30 px images for the control window (tools/build_icons.py)
 
 BRAND_FAMILY = "Atkinson Hyperlegible"
 FONT_FILES = ("AtkinsonHyperlegible-Regular.ttf", "AtkinsonHyperlegible-Bold.ttf")
@@ -35,7 +35,6 @@ RUNNING = "#2fa04f"
 STARTING = "#c98a00"
 LOG_WARNING = "#c98a00"
 LOG_ERROR = "#dd3333"
-MIDNIGHT = "#1b1f45"  # flat stand-in for the icon plate's gradient at small sizes
 
 STALE_OPACITY = 0.35  # overlay.html's .panel.stale
 
@@ -54,49 +53,6 @@ def blend(color: str, onto: str, opacity: float) -> str:
     c = [int(color[i : i + 2], 16) for i in (1, 3, 5)]
     b = [int(onto[i : i + 2], 16) for i in (1, 3, 5)]
     return "#" + "".join(f"{round(bb + (cc - bb) * opacity):02x}" for cc, bb in zip(c, b))
-
-
-# overlay.html's heart (viewBox 0 0 24 24), as absolute cubic Béziers:
-# M12 21s-7.5-4.6-10-9.1C.3 8.6 1.7 4.9 5.2 4.1 7.5 3.6 9.8 4.6 12 7
-# c2.2-2.4 4.5-3.4 6.8-2.9 3.5.8 4.9 4.5 3.2 7.8-2.5 4.5-10 9.1-10 9.1z
-_HEART_START = (12.0, 21.0)
-_HEART_CURVES = (
-    ((12.0, 21.0), (4.5, 16.4), (2.0, 11.9)),
-    ((0.3, 8.6), (1.7, 4.9), (5.2, 4.1)),
-    ((7.5, 3.6), (9.8, 4.6), (12.0, 7.0)),
-    ((14.2, 4.6), (16.5, 3.6), (18.8, 4.1)),
-    ((22.3, 4.9), (23.7, 8.6), (22.0, 11.9)),
-    ((19.5, 16.4), (12.0, 21.0), (12.0, 21.0)),
-)
-
-
-def heart_points(x: float, y: float, size: float, steps: int = 12) -> list[float]:
-    """Polygon points for the heart, its 24-unit box scaled to ``size``."""
-    s = size / 24
-    pts = [x + _HEART_START[0] * s, y + _HEART_START[1] * s]
-    p0 = _HEART_START
-    for c1, c2, p3 in _HEART_CURVES:
-        for i in range(1, steps + 1):
-            t = i / steps
-            u = 1 - t
-            px = u**3 * p0[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t**3 * p3[0]
-            py = u**3 * p0[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t**3 * p3[1]
-            pts += [x + px * s, y + py * s]
-        p0 = p3
-    return pts
-
-
-def gauge_points(cx: float, cy: float, r: float, steps: int = 48) -> list[float]:
-    """The icon's gauge arc: about 94% of a circle, gap at the top."""
-    # The SVG starts the dash at -79.2 deg (from 3 o'clock, clockwise in
-    # screen space) and draws 1654/1760 of the circumference.
-    start = math.radians(-79.2)
-    sweep = 2 * math.pi * 1654 / 1760
-    pts = []
-    for i in range(steps + 1):
-        a = start + sweep * i / steps
-        pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
-    return pts
 
 
 def rounded_rect_points(x0: float, y0: float, x1: float, y1: float, r: float, steps: int = 6) -> list[float]:

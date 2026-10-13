@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue
 import re
 import socket
@@ -99,6 +100,25 @@ def short_log_line(line: str) -> tuple[str, str | None]:
     return f"{clock} {message}", None
 
 
+def fit_text(text: str, font: tkfont.Font, width: float) -> str:
+    """Cut ``text`` to ``width`` pixels with an ellipsis (Tk only clips)."""
+    if font.measure(text) <= width:
+        return text
+    while text and font.measure(text + "…") > width:
+        text = text[:-1]
+    return text + "…" if text else ""
+
+
+def smooth_shape(canvas: tk.Canvas, points: list[float], color: str) -> None:
+    """A filled shape with an antialiased edge.
+
+    Tk on macOS draws polygons (fill and outline) without antialiasing, but
+    lines with it, so the edge is traced with a thin line over the fill.
+    """
+    canvas.create_polygon(points, fill=color, outline="")
+    canvas.create_line(*points, *points[:2], fill=color, width=1.25, joinstyle="round")
+
+
 class Fonts:
     """Named fonts, defined once. Atkinson Hyperlegible when it registered,
     the system font otherwise (design variant 3c vs 3b)."""
@@ -121,21 +141,6 @@ class Fonts:
         self.mono_log = tkfont.Font(root, family=brand.MONO_FAMILY, size=-10)
 
 
-class AppIcon(tk.Canvas):
-    """The app icon, drawn as vectors so it's sharp on Retina at 30 px."""
-
-    def __init__(self, parent: tk.Misc, size: int = 30, bg: str = "") -> None:
-        super().__init__(parent, width=size, height=size, highlightthickness=0, bd=0, bg=bg)
-        r = size / 2
-        self.create_polygon(brand.rounded_rect_points(0, 0, size, size, size * 185 / 824), fill=brand.MIDNIGHT, outline="")
-        ring = size * 280 / 824
-        self.create_line(
-            brand.gauge_points(r, r, ring), fill=brand.SPO2_GOOD, width=size * 64 / 824, capstyle="round", smooth=True
-        )
-        heart = size * 13 * 24 / 824
-        self.create_polygon(brand.heart_points(r - heart / 2, r - heart / 2 + size * 0.006, heart), fill=brand.PULSE, outline="")
-
-
 class Readout(tk.Canvas):
     """A copy of the overlay panel: heart, BPM, SpO2, status, 5-minute trend."""
 
@@ -145,9 +150,15 @@ class Readout(tk.Canvas):
 
     def __init__(self, parent: tk.Misc, fonts: Fonts, bg: str) -> None:
         self.fonts = fonts
+        # Pre-rendered: polygons come out stair-stepped on Retina in Tk.
+        self.heart_images = {
+            stale: tk.PhotoImage(master=parent, file=str(brand.UI_DIR / name))
+            for stale, name in ((False, "heart.png"), (True, "heart-stale.png"))
+        }
         self.row_h = fonts.value.metrics("linespace")
         height = self.PAD_TOP + self.row_h + self.TREND_GAP + self.TREND_H + self.PAD_BOTTOM
-        super().__init__(parent, height=height, highlightthickness=0, bd=0, bg=bg)
+        # 552 wide sets the window's natural width (600 with its padding).
+        super().__init__(parent, width=552, height=height, highlightthickness=0, bd=0, bg=bg)
         self.hr: int | None = None
         self.spo2: int | None = None
         self.state_line = "Bridge not running"
@@ -174,16 +185,14 @@ class Readout(tk.Canvas):
         w = max(self.winfo_width(), 1)
         h = int(self.cget("height"))
         f = self.fonts
-        self.create_polygon(brand.rounded_rect_points(0, 0, w, h, 12), fill=brand.PANEL, outline="")
+        smooth_shape(self, brand.rounded_rect_points(0.5, 0.5, w - 0.5, h - 0.5, 12), brand.PANEL)
 
         top = self.PAD_TOP
         baseline = top + f.value.metrics("ascent")
         mid = baseline - f.value.metrics("ascent") * 0.36  # middle of the digits
         x = self.PAD_SIDE
 
-        self.create_polygon(
-            brand.heart_points(x, mid - self.HEART / 2, self.HEART), fill=self.color(brand.PULSE), outline=""
-        )
+        self.create_image(x, mid - self.HEART / 2, image=self.heart_images[self.stale], anchor="nw")
         x += self.HEART + 8
         x = self._text(x, baseline, str(self.hr) if self.hr else "--", f.value, brand.INK) + 8
         x = self._text(x, baseline, "bpm", f.unit, brand.INK_MUTED) + 20
@@ -201,13 +210,19 @@ class Readout(tk.Canvas):
                 x += 3 + f.marker.measure(marker)
         else:
             x = self._text(x, baseline, "--", f.value, brand.INK)
-        self._text(x + 8, baseline, "SpO₂", f.unit, brand.INK_MUTED)
+        x = self._text(x + 8, baseline, "SpO₂", f.unit, brand.INK_MUTED)
 
+        # Right-aligned status, cut to the room left of it so a long device
+        # name can't run back over the numbers.
         line_h = f.small.metrics("linespace")
         y = mid - (2 * line_h + 2) / 2
         right = w - self.PAD_SIDE
-        self.create_text(right, y, text=self.state_line, font=f.small, fill=self.color(brand.INK), anchor="ne")
-        self.create_text(right, y + line_h + 2, text=self.source_line, font=f.small, fill=self.color(brand.INK_MUTED), anchor="ne")
+        room = max(right - x - 16, 0)
+        for i, (text, color) in enumerate(((self.state_line, brand.INK), (self.source_line, brand.INK_MUTED))):
+            self.create_text(
+                right, y + i * (line_h + 2), text=fit_text(text, f.small, room), font=f.small,
+                fill=self.color(color), anchor="ne",
+            )
 
         self._draw_trend(self.PAD_SIDE, top + self.row_h + self.TREND_GAP, w - 2 * self.PAD_SIDE, self.TREND_H)
 
@@ -223,13 +238,17 @@ class Readout(tk.Canvas):
         if len(self.history) < 2:
             return
         pad = 4
-        oldest = now - TREND_WINDOW_S
+        # Span the oldest reading to now, so a young trend fills the width
+        # instead of starting squeezed against the right edge; it settles
+        # into a rolling 5-minute window once it has that much history.
+        oldest = self.history[0][0]
+        window = max(now - oldest, 1.0)
         hrs = [hr for _t, hr in self.history]
         lo, span = min(hrs), max(max(hrs) - min(hrs), 1)
         pts = []
         for t, hr in self.history:
             pts += [
-                x0 + pad + (t - oldest) / TREND_WINDOW_S * (w - 2 * pad),
+                x0 + pad + (t - oldest) / window * (w - 2 * pad),
                 y0 + pad + (1 - (hr - lo) / span) * (h - 2 * pad),
             ]
         area = [pts[0], y0 + h, *pts, pts[-2], y0 + h]
@@ -257,8 +276,6 @@ class App:
         self._set_window_icon()
         self._build()
         self._refresh_sources()
-        root.update_idletasks()
-        root.geometry(f"{max(600, root.winfo_reqwidth())}x{root.winfo_reqheight()}")
         LiveFeed(self.settings.ws_port, self.events).start()
         self._poll()
 
@@ -288,7 +305,8 @@ class App:
         # Header: icon, wordmark, status, then Restart and Start/Stop.
         header = ttk.Frame(outer)
         header.pack(fill="x")
-        AppIcon(header, 30, bg=window_bg).pack(side="left")
+        self._header_icon = tk.PhotoImage(master=self.root, file=str(brand.UI_DIR / "header-icon.png"))
+        ttk.Label(header, image=self._header_icon).pack(side="left")
         ttk.Label(header, text="Vital Sign", style="Wordmark.TLabel").pack(side="left", padx=(10, 0))
         self.status = ttk.Label(header, text="Checking…", style="Status.TLabel")
         self.status.pack(side="left", padx=(16, 0))
@@ -381,19 +399,11 @@ class App:
             return "Any one supported Bluetooth device"
         return self.names.get(spec, "")
 
-    def _fit(self, text: str, font: tkfont.Font, width: int) -> str:
-        """Cut ``text`` to ``width`` pixels with an ellipsis (Treeview only clips)."""
-        if font.measure(text) <= width:
-            return text
-        while text and font.measure(text + "…") > width:
-            text = text[:-1]
-        return text + "…"
-
     def _refresh_sources(self) -> None:
         selected = self._selected()
         self.table.delete(*self.table.get_children())
         for i, spec in enumerate(self.settings.sources):
-            spec_shown = self._fit(spec, tkfont.nametofont("TkDefaultFont"), SOURCE_COLUMN_PX - 12)
+            spec_shown = fit_text(spec, tkfont.nametofont("TkDefaultFont"), SOURCE_COLUMN_PX - 12)
             self.table.insert("", "end", iid=str(i), values=(i + 1, self._device_name(spec), spec_shown))
         if not self.settings.sources:
             self.table.insert("", "end", iid="empty", values=("", EMPTY_SOURCES, ""), tags=("empty",))
@@ -421,8 +431,9 @@ class App:
         pass itself, and only touches the height when it really changes;
         otherwise each resize would trigger the next.
         """
+        # Counts the breaks between display lines, so one less than the lines.
         counted = self.hint.count("1.0", "end-1c", "displaylines")
-        lines = max(1, (counted[0] if isinstance(counted, tuple) else counted) or 1)
+        lines = 1 + ((counted[0] if isinstance(counted, tuple) else counted) or 0)
         if int(self.hint.cget("height")) != lines:
             self.hint.configure(height=lines)
 
@@ -576,6 +587,10 @@ class App:
             r.state_line = "Bridge not running" if not self.bridge_up else self.last_state
             r.source_line = ""
         elif not msg.get("worn"):
+            # Still a live message, so not stale -- the overlay treats it the
+            # same way and shows "--" on an undimmed panel.
+            self.last_reading = time.monotonic()
+            r.stale = False
             r.hr = r.spo2 = None
             r.state_line = "Not worn"
             r.source_line = f"from {msg.get('source')}" if msg.get("source") else ""
@@ -716,7 +731,37 @@ class LiveFeed(threading.Thread):
             await asyncio.sleep(1.5)
 
 
+_IGNORE_STATE = ["-ApplePersistenceIgnoreState", "YES"]
+
+
+def skip_window_restoration() -> bool:
+    """Stop macOS from offering to restore windows when Tk starts.
+
+    After the window is force-quit or crashes, macOS asks on the next launch
+    whether to reopen Python's windows -- with a modal alert a Tk app never
+    shows, so tk.Tk() would hang forever waiting on it. Setting AppKit's
+    ApplePersistenceIgnoreState in the argument domain skips restoration,
+    which a Tk app doesn't use anyway. Call before tk.Tk(). Returns False if
+    Foundation (pyobjc, which Bleak brings on macOS) isn't available.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        from Foundation import NSArgumentDomain, NSUserDefaults
+    except ImportError:
+        return False
+    defaults = NSUserDefaults.standardUserDefaults()
+    domain = dict(defaults.volatileDomainForName_(NSArgumentDomain) or {})
+    domain["ApplePersistenceIgnoreState"] = "YES"
+    defaults.setVolatileDomain_forName_(domain, NSArgumentDomain)
+    return True
+
+
 def main() -> None:
+    if not skip_window_restoration() and _IGNORE_STATE[0] not in sys.argv:
+        # No Foundation: pass the same setting as a launch argument instead,
+        # which AppKit only reads from the real process arguments.
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], *_IGNORE_STATE])
     if WINDOWS:
         # Without an app ID of its own, the taskbar groups this window under
         # pythonw.exe and shows Python's icon instead of Vital Sign's.

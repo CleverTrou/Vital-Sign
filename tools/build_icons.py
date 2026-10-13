@@ -12,6 +12,9 @@ Outputs (committed, so nobody needs these tools just to run the app):
   assets/icon/vitalsign.icns             classic macOS icon
   assets/icon/vitalsign.ico              Windows, 16-256 px
   assets/icon/vitalsign-{256,512}.png    window/Dock icon for Tk
+  assets/icon/ui/*.png                   30 px header icon and readout hearts
+                                         (normal and dimmed) for the control
+                                         window
   assets/icon/appearances.png            preview of the macOS 26+ variants
   <app>/Contents/Resources/{vitalsign.icns,Assets.car} for both app bundles
 
@@ -66,6 +69,32 @@ def build_pngs() -> None:
         render(SRC / "icon-windows-1024.svg", size, ICON / f"vitalsign-{size}.png")
 
 
+def build_ui_pngs(tmp: Path) -> None:
+    """Small antialiased images for the control window.
+
+    Tk rounds canvas coordinates to whole points, so curves drawn as
+    polygons come out stair-stepped on Retina screens; pre-rendered images
+    stay smooth. The dimmed heart is pre-blended because Tk images have no
+    opacity (see vitalsign.brand.STALE_OPACITY).
+    """
+    sys.path.insert(0, str(ROOT))
+    from vitalsign import brand
+
+    ui = ICON / "ui"
+    ui.mkdir(exist_ok=True)
+    # The macOS master cropped to its plate, so the icon fills its 30 px box.
+    plate = tmp / "plate.svg"
+    plate.write_text(
+        (SRC / "icon-macos-1024.svg").read_text().replace('viewBox="0 0 1024 1024"', 'viewBox="100 100 824 824"', 1)
+    )
+    render(plate, 30, ui / "header-icon.png")
+    heart = (SRC / "heart.svg").read_text()
+    for name, color in (("heart.png", brand.PULSE), ("heart-stale.png", brand.blend(brand.PULSE, brand.PANEL, brand.STALE_OPACITY))):
+        svg = tmp / name.replace(".png", ".svg")
+        svg.write_text(heart.replace('fill="#ff4d6d"', f'fill="{color}"'))
+        render(svg, 30, ui / name)
+
+
 def build_asset_catalog(tmp: Path) -> Path:
     out = tmp / "actool"
     out.mkdir()
@@ -110,6 +139,7 @@ def main() -> int:
         build_icns(tmp)
         build_ico(tmp)
         build_pngs()
+        build_ui_pngs(tmp)
         install(build_asset_catalog(tmp))
         build_preview(tmp)
     print("Icons rebuilt. Commit assets/icon/ and both app bundles' Resources/.")

@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The control window, the overlay's numbers and the wordmark use Atkinson
   Hyperlegible, a typeface designed for legibility. It's bundled and loaded
   only by Vital Sign; nothing is installed system-wide.
+- The heart-rate trend spans the full width from its first readings, then
+  settles into a rolling 5-minute window. It used to start squeezed against
+  the right edge until 5 minutes had passed.
+
+### Fixed
+
+- On macOS, the control window could hang on open after it had been
+  force-quit, waiting on a window-restore prompt that never appeared.
 
 ## [0.2.0] - 2026-07-26
 

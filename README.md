@@ -220,8 +220,9 @@ logo or wordmark over a streamer's content.
 - A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
   client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
   keeps a rolling window of the same readings it already gets over the
-  WebSocket. A freshly (re)loaded overlay starts with an empty graph and
-  builds up over the next 5 minutes; nothing survives a reload. The window
+  WebSocket. A freshly (re)loaded overlay starts with an empty graph that
+  spans the full width from its first readings, and settles into a rolling
+  5-minute window once it has that much history; nothing survives a reload. The window
   length lives in one constant (`TREND_WINDOW_MS`) if you want it longer
   or shorter.
 
