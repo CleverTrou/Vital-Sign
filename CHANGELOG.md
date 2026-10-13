@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches the sources the window shows. A deleted file is restored from the
   window, and a file edited elsewhere is shown before anything starts. A
   window left open used to start the bridge with no sources, so it scanned
-  for a Bluetooth device instead of listening for the watch. ([#PR](https://github.com/CleverTrou/Vital-Sign/pull/PR))
+  for a Bluetooth device instead of listening for the watch. ([#11](https://github.com/CleverTrou/Vital-Sign/pull/11))
 
 ## [0.2.0] - 2026-07-26
 
