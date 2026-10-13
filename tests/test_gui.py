@@ -122,6 +122,27 @@ class GuiTest(unittest.TestCase):
         self.assertEqual(self.gui.read_settings(self.gui.CONFIG).ws_port, 8766)
         run.assert_called_once()
 
+    def test_start_keeps_a_custom_port_even_with_no_sources(self):
+        self.gui.CONFIG.write_text('WS_PORT="8766"\n')
+        self.app.settings = self.gui.read_settings(self.gui.CONFIG)
+        self.gui.CONFIG.unlink()
+        run, notice = self._press_start()
+        self.assertEqual(self.gui.read_settings(self.gui.CONFIG).ws_port, 8766)
+        run.assert_called_once()
+        notice.assert_not_called()
+
+    def test_start_refuses_a_saved_source_the_bridge_would_reject(self):
+        self.app._add("hds")
+        self.gui.CONFIG.write_text('SOURCES="pulsoid"\n')
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showerror"
+        ) as error:
+            self.app.start()
+        error.assert_called_once()
+        self.assertIn("pulsoid", error.call_args.args[1])
+        self.assertEqual(self.app.settings.sources, ["hds"])
+        run.assert_not_called()
+
     def test_start_follows_a_port_changed_elsewhere(self):
         self.app._add("hds")
         self.gui.CONFIG.write_text(self.gui.CONFIG.read_text() + 'WS_PORT="8766"\n')

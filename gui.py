@@ -30,7 +30,7 @@ from tkinter import messagebox, ttk
 import websockets
 
 from vitalsign import brand
-from vitalsign.config_file import config_path, read_settings, write_sources
+from vitalsign.config_file import DEFAULT_WS_PORT, config_path, read_settings, write_sources
 from vitalsign.protocols import HDS_DEFAULT_PORT
 from vitalsign.sources import parse_source
 
@@ -586,6 +586,8 @@ class App:
         try:
             if not CONFIG.exists():
                 if not self.settings.sources:
+                    if self.settings.ws_port != DEFAULT_WS_PORT:
+                        write_sources(CONFIG, [], self.settings.ws_port)
                     return True
                 write_sources(CONFIG, self.settings.sources, self.settings.ws_port)
                 messagebox.showinfo(
@@ -595,6 +597,8 @@ class App:
                 )
                 return True
             saved = read_settings(CONFIG)
+            for spec in saved.sources:
+                parse_source(spec)  # a hand-edited value the bridge would refuse
         except (OSError, ValueError) as e:
             messagebox.showerror("Vital Sign", f"Couldn't check {CONFIG.name}:\n{e}")
             return False
