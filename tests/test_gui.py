@@ -117,9 +117,12 @@ class GuiTest(unittest.TestCase):
     def test_restart_does_not_stop_the_bridge_when_it_will_not_start(self):
         self.app._add("hds")
         self.gui.write_sources(self.gui.CONFIG, [])
-        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(self.gui.messagebox, "showinfo"):
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showinfo"
+        ) as notice:
             self.app.restart()
         run.assert_not_called()
+        self.assertIn("press Restart again", notice.call_args.args[1])
 
     def test_start_with_no_sources_and_no_file_just_starts(self):
         run, notice = self._press_start()

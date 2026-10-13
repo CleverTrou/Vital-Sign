@@ -569,7 +569,7 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _matches_saved_settings(self) -> bool:
+    def _matches_saved_settings(self, action: str) -> bool:
         """Check, before (re)starting, that the file the bridge will read
         agrees with the list this window shows.
 
@@ -604,19 +604,19 @@ class App:
         messagebox.showinfo(
             "Vital Sign",
             f"{CONFIG.name} was changed outside this window, so the source list now shows what is saved. "
-            "Check it, then press Start again.",
+            f"Check it, then press {action} again.",
         )
         return False
 
     def start(self) -> None:
-        if self._matches_saved_settings():
+        if self._matches_saved_settings("Start"):
             self._in_background("Starting…", "start_bridge")
 
     def stop(self) -> None:
         self._in_background("Stopping…", "stop_bridge")
 
     def restart(self) -> None:
-        if self._matches_saved_settings():
+        if self._matches_saved_settings("Restart"):
             self._in_background("Restarting…", "stop_bridge", "start_bridge")
 
     def _stoppable(self) -> bool:
