@@ -183,6 +183,19 @@ class Readout(tk.Canvas):
         self.history: list[tuple[float, int]] = []
         self.panel_width = 0.0
         self.trend_box = (0.0, 0.0, 0.0, 0.0)
+        # Fixed-width slots for the two metrics, wide enough for any value,
+        # so the panel doesn't change width with the digits: Atkinson's
+        # figures are proportional ("1" is narrower than "8").
+        widest = str(max(range(10), key=lambda d: fonts.value.measure(str(d))))
+        marker = max(fonts.marker.measure(m) for m in ("▲", "⚠\ufe0e"))
+        self.hr_group = (
+            self.HEART + self.GAP + fonts.value.measure(widest * 3) + self.GAP + fonts.unit.measure("bpm")
+        )
+        self.spo2_group = (
+            max(fonts.value.measure("100%"), fonts.value.measure(widest * 2 + "%") + 3 + marker)
+            + self.GAP
+            + fonts.unit.measure("SpO₂")
+        )
         self.bind("<Configure>", lambda _e: self.redraw())
 
     def color(self, c: str) -> str:
@@ -209,31 +222,38 @@ class Readout(tk.Canvas):
         baseline = top + (self.ROW_H - (ascent + descent)) / 2 + ascent
         mid = top + self.ROW_H / 2
 
-        # Lay the row out first: the panel is sized to it.
+        # Lay the row out first: the panel is sized to it. Each metric gets a
+        # fixed-width slot (see __init__) with its content centered in it, so
+        # the panel and the divider never move as the digits change.
         items: list = []
-        x = self.PAD_X
+        hr_text = str(self.hr) if self.hr else "--"
+        hr_w = self.HEART + self.GAP + f.value.measure(hr_text) + self.GAP + f.unit.measure("bpm")
+        x = self.PAD_X + (self.hr_group - hr_w) / 2
         items.append(("heart", x))
         x += self.HEART + self.GAP
-        hr_text = str(self.hr) if self.hr else "--"
         items.append(("text", x, hr_text, f.value, brand.INK))
         x += f.value.measure(hr_text) + self.GAP
         items.append(("text", x, "bpm", f.unit, brand.INK_MUTED))
-        x += f.unit.measure("bpm") + self.METRIC_GAP
-        items.append(("divider", x))
-        x += 1 + self.METRIC_GAP
+
+        divider_x = self.PAD_X + self.hr_group + self.METRIC_GAP
+        items.append(("divider", divider_x))
+        spo2_left = divider_x + 1 + self.METRIC_GAP
+
+        marker, spo2_color, spo2_text = "", brand.INK, "--"
         if self.spo2:
             spo2_color, marker = brand.spo2_severity(self.spo2)
-            items.append(("text", x, f"{self.spo2}%", f.value, spo2_color))
-            x += f.value.measure(f"{self.spo2}%")
-            if marker:
-                items.append(("marker", x + 3, marker, spo2_color))
-                x += 3 + f.marker.measure(marker)
-        else:
-            items.append(("text", x, "--", f.value, brand.INK))
-            x += f.value.measure("--")
-        x += self.GAP
-        items.append(("text", x, "SpO₂", f.unit, brand.INK_MUTED))
-        row_right = x + f.unit.measure("SpO₂")
+            spo2_text = f"{self.spo2}%"
+        marker_w = 3 + f.marker.measure(marker) if marker else 0
+        spo2_w = f.value.measure(spo2_text) + marker_w + self.GAP + f.unit.measure("SpO₂")
+        x = spo2_left + (self.spo2_group - spo2_w) / 2
+        items.append(("text", x, spo2_text, f.value, spo2_color))
+        x += f.value.measure(spo2_text)
+        if marker:
+            items.append(("marker", x + 3, marker, spo2_color))
+            x += marker_w
+        items.append(("text", x + self.GAP, "SpO₂", f.unit, brand.INK_MUTED))
+
+        row_right = spo2_left + self.spo2_group
         self.panel_width = row_right + self.PAD_X
 
         smooth_shape(self, brand.rounded_rect_points(0.5, 0.5, self.panel_width - 0.5, h - 0.5, self.RADIUS), brand.PANEL)

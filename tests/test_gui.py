@@ -106,6 +106,16 @@ class GuiTest(unittest.TestCase):
         self.app._show_reading({"type": "reading", "worn": False, "source": "Ring"})
         self.assertEqual((r.hr, r.state_line, r.stale), (None, "Not worn", False))
 
+    def test_panel_width_does_not_depend_on_the_digits(self):
+        r = self.app.readout
+        r.winfo_width = lambda: 552
+        widths = set()
+        for hr, spo2 in ((None, None), (61, 99), (111, 100), (188, 88), (72, 91)):
+            r.hr, r.spo2 = hr, spo2
+            r.redraw()
+            widths.add(round(r.panel_width, 3))
+        self.assertEqual(len(widths), 1, widths)
+
     def test_long_source_names_stay_beside_the_panel(self):
         r = self.app.readout
         r.winfo_width = lambda: 552

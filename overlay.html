@@ -132,6 +132,11 @@
     font-variant-numeric: tabular-nums;
   }
   .unit { font-size: 18px; opacity: 0.7; font-weight: 500; }
+  /* Each metric is centered in a fixed-width box (sized by
+     reserveNumberWidths()), so the panel doesn't change width -- and the
+     whole overlay doesn't rescale -- with the digits. tabular-nums alone
+     can't do it: Atkinson Hyperlegible's figures are proportional. */
+  .metric { justify-content: center; }
 
   .spo2-value {
     font-size: 56px;
@@ -532,6 +537,41 @@
     };
     ws.onerror = () => ws.close(); // triggers onclose's retry above
   }
+
+  // Widest value each number can show, measured in the real font, so the
+  // panel keeps one width whatever the digits are (see the #hrValue CSS).
+  function reserveNumberWidths() {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute; visibility:hidden; white-space:nowrap";
+    stage.appendChild(probe);
+    // offsetWidth is the layout width, unaffected by #stage's scale().
+    const measure = (cls, html) => {
+      probe.className = cls;
+      probe.innerHTML = html;
+      return probe.offsetWidth;
+    };
+    const widest = [..."0123456789"].reduce((a, d) => (measure("value", d) > measure("value", a) ? d : a));
+    const marked = (m) => measure("spo2-value", widest.repeat(2) + "%" + `<span class="spo2-marker">${m}</span>`);
+    const widestHr = measure("value", widest.repeat(3));
+    const widestSpo2 = Math.max(measure("spo2-value", "100%"), marked("▲"), marked("⚠︎"));
+    probe.remove();
+    // Each metric's box = its current width with the value swapped for the
+    // widest one it can show.
+    for (const [value, widestValue] of [[hrValue, widestHr], [spo2Value, widestSpo2]]) {
+      const metric = value.parentElement;
+      metric.style.minWidth = "";
+      const others = metric.offsetWidth - value.offsetWidth;
+      metric.style.minWidth = others + widestValue + 1 + "px";
+    }
+  }
+  reserveNumberWidths();
+  // Again once the bundled font has loaded: the first pass may have measured
+  // a fallback font.
+  document.fonts.ready.then(() => {
+    reserveNumberWidths();
+    rescaleStage();
+    resizeTrendViewBox();
+  });
 
   rescaleStage(); // establish the initial scale before any data arrives
   resizeTrendViewBox(); // establish the initial viewBox before any data arrives
