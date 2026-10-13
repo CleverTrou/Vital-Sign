@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the bridge was already running. It now opens the control window (after
   starting the bridge if it isn't running), and opening the app again brings the
   window forward even if it was minimized. OBS's start action is unchanged
-  and stays headless. ([#PR](https://github.com/CleverTrou/Vital-Sign/pull/PR))
+  and stays headless. ([#12](https://github.com/CleverTrou/Vital-Sign/pull/12))
 - On macOS, the control window could hang on open after it had been
   force-quit, waiting on a window-restore prompt that never appeared. ([#9](https://github.com/CleverTrou/Vital-Sign/pull/9))
 - Start and Restart in the control window now check that `config.sh` still
