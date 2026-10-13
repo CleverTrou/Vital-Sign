@@ -55,6 +55,7 @@ STATE_TEXT = {
 }
 
 TREND_WINDOW_S = 5 * 60  # overlay.html's TREND_WINDOW_MS
+SPO2_HIDE_S = 30  # overlay.html's SPO2_HIDE_MS
 STALE_S = 8  # overlay.html's STALE_MS
 EMPTY_SOURCES = "(none: the bridge scans for one supported Bluetooth device)"
 SOURCE_COLUMN_PX = 200
@@ -180,6 +181,8 @@ class Readout(tk.Canvas):
         self.state_line = "Bridge not running"
         self.source_line = ""
         self.stale = True
+        # Hidden for heart-rate-only sources; App decides (SPO2_HIDE_S).
+        self.show_spo2 = True
         self.history: list[tuple[float, int]] = []
         self.panel_width = 0.0
         self.trend_box = (0.0, 0.0, 0.0, 0.0)
@@ -235,25 +238,26 @@ class Readout(tk.Canvas):
         x += f.value.measure(hr_text) + self.GAP
         items.append(("text", x, "bpm", f.unit, brand.INK_MUTED))
 
-        divider_x = self.PAD_X + self.hr_group + self.METRIC_GAP
-        items.append(("divider", divider_x))
-        spo2_left = divider_x + 1 + self.METRIC_GAP
+        row_right = self.PAD_X + self.hr_group
+        if self.show_spo2:
+            divider_x = row_right + self.METRIC_GAP
+            items.append(("divider", divider_x))
+            spo2_left = divider_x + 1 + self.METRIC_GAP
 
-        marker, spo2_color, spo2_text = "", brand.INK, "--"
-        if self.spo2:
-            spo2_color, marker = brand.spo2_severity(self.spo2)
-            spo2_text = f"{self.spo2}%"
-        marker_w = 3 + f.marker.measure(marker) if marker else 0
-        spo2_w = f.value.measure(spo2_text) + marker_w + self.GAP + f.unit.measure("SpO₂")
-        x = spo2_left + (self.spo2_group - spo2_w) / 2
-        items.append(("text", x, spo2_text, f.value, spo2_color))
-        x += f.value.measure(spo2_text)
-        if marker:
-            items.append(("marker", x + 3, marker, spo2_color))
-            x += marker_w
-        items.append(("text", x + self.GAP, "SpO₂", f.unit, brand.INK_MUTED))
-
-        row_right = spo2_left + self.spo2_group
+            marker, spo2_color, spo2_text = "", brand.INK, "--"
+            if self.spo2:
+                spo2_color, marker = brand.spo2_severity(self.spo2)
+                spo2_text = f"{self.spo2}%"
+            marker_w = 3 + f.marker.measure(marker) if marker else 0
+            spo2_w = f.value.measure(spo2_text) + marker_w + self.GAP + f.unit.measure("SpO₂")
+            x = spo2_left + (self.spo2_group - spo2_w) / 2
+            items.append(("text", x, spo2_text, f.value, spo2_color))
+            x += f.value.measure(spo2_text)
+            if marker:
+                items.append(("marker", x + 3, marker, spo2_color))
+                x += marker_w
+            items.append(("text", x + self.GAP, "SpO₂", f.unit, brand.INK_MUTED))
+            row_right = spo2_left + self.spo2_group
         self.panel_width = row_right + self.PAD_X
 
         smooth_shape(self, brand.rounded_rect_points(0.5, 0.5, self.panel_width - 0.5, h - 0.5, self.RADIUS), brand.PANEL)
@@ -323,6 +327,9 @@ class App:
         self.bridge_up = False
         self.busy = False
         self.last_reading = 0.0
+        # When an SpO2 value last arrived (monotonic seconds). Counted from
+        # startup, so the full panel shows for the first SPO2_HIDE_S too.
+        self.last_spo2 = time.monotonic()
         self.last_state = ""
         self._last_trend_draw = 0.0
         self.fonts = Fonts(root, brand_font)
@@ -623,8 +630,10 @@ class App:
         """Dim the panel when readings stop, and keep the trend window moving."""
         now = time.monotonic()
         stale = not self.bridge_up or now - self.last_reading > STALE_S
-        if stale != self.readout.stale or now - self._last_trend_draw >= 5:
+        show_spo2 = now - self.last_spo2 <= SPO2_HIDE_S
+        if stale != self.readout.stale or show_spo2 != self.readout.show_spo2 or now - self._last_trend_draw >= 5:
             self.readout.stale = stale
+            self.readout.show_spo2 = show_spo2
             self._last_trend_draw = now
             self.readout.redraw()
 
@@ -655,6 +664,9 @@ class App:
             r.hr, r.spo2 = msg.get("hr"), msg.get("spo2")
             if r.hr:
                 r.record(r.hr)
+            if r.spo2:
+                self.last_spo2 = time.monotonic()
+                r.show_spo2 = True
             r.state_line = self.last_state or "Connected"
             sources = sorted({s for s in (msg.get("hr_source"), msg.get("spo2_source")) if s})
             r.source_line = "from " + " + ".join(sources) if sources else ""

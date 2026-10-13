@@ -137,6 +137,9 @@
      whole overlay doesn't rescale -- with the digits. tabular-nums alone
      can't do it: Atkinson Hyperlegible's figures are proportional. */
   .metric { justify-content: center; }
+  /* Heart-rate-only sources (watches, straps) have no SpO2 to show, so the
+     section collapses instead of sitting there as "--". See SPO2_HIDE_MS. */
+  .panel.no-spo2 #spo2Divider, .panel.no-spo2 #spo2Metric { display: none; }
 
   .spo2-value {
     font-size: 56px;
@@ -167,7 +170,11 @@
      which no pointer ever reaches; a hover affordance would only matter
      for the secondary case of opening this file directly in a browser,
      which isn't worth the complexity here. */
-  .trend-row { height: 44px; }
+  /* width: 0 + min-width: 100% -- the trend stretches to the panel's width
+     but never sets it. Otherwise the SVG's viewBox, which resizeTrendViewBox()
+     derives from the trend's own previous width, holds the panel open, and
+     the panel can't narrow when the SpO2 section hides. */
+  .trend-row { height: 44px; width: 0; min-width: 100%; }
   .hr-trend { width: 100%; height: 100%; display: block; overflow: visible; }
   .hr-trend-area { fill: var(--hr-color); opacity: 0.12; stroke: none; }
   .hr-trend-line {
@@ -226,8 +233,8 @@
           <span class="value" id="hrValue" aria-live="polite">--</span>
           <span class="unit">bpm</span>
         </div>
-        <div class="divider" aria-hidden="true"></div>
-        <div class="metric" role="group" aria-label="Blood oxygen saturation">
+        <div class="divider" id="spo2Divider" aria-hidden="true"></div>
+        <div class="metric" id="spo2Metric" role="group" aria-label="Blood oxygen saturation">
           <span class="spo2-value" id="spo2Value" aria-live="polite" aria-atomic="true"><span id="spo2Number">--</span><span class="spo2-marker" id="spo2Marker" aria-hidden="true"></span></span>
           <span class="unit">SpO&#8322;</span>
         </div>
@@ -359,13 +366,28 @@
   // fixed (0, 0) origin, avoids relying on two different mechanisms
   // (flexbox + transform-origin) implicitly agreeing on what "center"
   // means for a box with out-of-flow content.
-  function rescaleStage() {
-    stage.style.transform = "none";
+  function naturalSize() {
     const stageRect = stage.getBoundingClientRect();
     const statusRect = statusEl.getBoundingClientRect();
-    const naturalW = Math.max(stage.clientWidth, statusRect.right - stageRect.left) || 1;
-    const naturalH = Math.max(stage.clientHeight, statusRect.bottom - stageRect.top) || 1;
-    const scale = Math.min(window.innerWidth / naturalW, window.innerHeight / naturalH);
+    return [
+      Math.max(stage.clientWidth, statusRect.right - stageRect.left) || 1,
+      Math.max(stage.clientHeight, statusRect.bottom - stageRect.top) || 1,
+    ];
+  }
+
+  function rescaleStage() {
+    stage.style.transform = "none";
+    // The scale comes from the full panel, SpO2 included, even while that
+    // section is hidden -- otherwise hiding it would make the widget
+    // *bigger* (the narrower panel would be scaled up to fill the box)
+    // instead of just narrower. The class is put back before the browser
+    // renders, so nothing flickers.
+    const hidden = panel.classList.contains("no-spo2");
+    panel.classList.remove("no-spo2");
+    const [fullW, fullH] = naturalSize();
+    panel.classList.toggle("no-spo2", hidden);
+    const [naturalW, naturalH] = naturalSize();
+    const scale = Math.min(window.innerWidth / fullW, window.innerHeight / fullH);
     const offsetX = (window.innerWidth - naturalW * scale) / 2;
     const offsetY = (window.innerHeight - naturalH * scale) / 2;
     stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
@@ -456,8 +478,26 @@
 
   window.addEventListener("resize", resizeTrendViewBox);
 
+  // SpO2 shows as soon as a value arrives, and hides after this long
+  // without one -- long enough that a ring settling back onto a finger
+  // doesn't make the panel flicker between widths.
+  const SPO2_HIDE_MS = 30 * 1000;
+  // Counted from load, so a freshly (re)loaded overlay keeps the full panel
+  // for the same 30 seconds -- e.g. while a ring is still connecting.
+  let lastSpo2At = Date.now();
+
+  function updateSpo2Visibility() {
+    const hide = Date.now() - lastSpo2At > SPO2_HIDE_MS;
+    if (hide !== panel.classList.contains("no-spo2")) {
+      panel.classList.toggle("no-spo2", hide);
+      rescaleStage();
+    }
+  }
+
   function applyReading(msg) {
     resetStaleTimer();
+    if (msg.worn && !msg.calibrating && msg.spo2 != null) lastSpo2At = Date.now();
+    updateSpo2Visibility();
 
     if (!msg.worn) {
       setStatus("Not worn");
@@ -579,7 +619,10 @@
   // the 5-minute window while the ring is off/disconnected -- without
   // this, the trend line would just freeze mid-shape instead of visibly
   // shrinking/scrolling as it goes stale.
-  setInterval(drawTrend, 5000);
+  setInterval(() => {
+    drawTrend();
+    updateSpo2Visibility(); // also when readings stop arriving altogether
+  }, 5000);
   connect();
 </script>
 </body>

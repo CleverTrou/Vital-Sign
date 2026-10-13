@@ -74,8 +74,9 @@ python3 bridge.py --source viatom --source hds
 
 shows heart rate and SpO2 from the ring while it's on your finger. If you
 take it off, or it runs flat, the overlay switches to the watch's heart
-rate within a couple of seconds and shows `--` for SpO2. It switches back
-as soon as the ring has a reading again. "Live" means a reading within the
+rate within a couple of seconds, shows `--` for SpO2, and after 30 seconds
+narrows to heart rate alone. It switches back as soon as the ring has a
+reading again. "Live" means a reading within the
 last 15 seconds (`--fresh-seconds`).
 
 ## Smartwatches
@@ -231,8 +232,12 @@ logo or wordmark over a streamer's content.
   requests, no build step) that connects to that WebSocket and renders a
   beating heart icon + BPM + SpO2, with a transparent background sized for
   compositing in OBS. It fades out and shows a status line if the bridge
-  disconnects or the device comes off. For heart-rate-only sources it shows
-  `--` for SpO2.
+  disconnects or the device comes off. With no SpO2 for 30 seconds -- a
+  heart-rate-only source such as a watch or strap, or a ring that's been
+  taken off -- the SpO2 half of the panel hides, so the widget narrows to
+  heart rate alone (at the same size, not scaled up to fill the box). It
+  comes back as soon as an SpO2 value arrives. The delay is
+  `SPO2_HIDE_MS` in `overlay.html`.
 - A BPM trend sparkline (last 5 minutes) sits below the numbers, entirely
   client-side — `bridge.py` doesn't buffer any history, `overlay.html` just
   keeps a rolling window of the same readings it already gets over the
