@@ -121,8 +121,12 @@ class GuiTest(unittest.TestCase):
         r = self.app.readout
         r.winfo_width = lambda: 552
         self.app.bridge_up = True
-        # Heart rate only (a watch or strap): no SpO2 section.
+        # Shown at first, like the overlay right after it loads...
         self.app._show_reading({"type": "reading", "hr": 70, "spo2": None, "worn": True, "hr_source": "Watch"})
+        self.assertTrue(r.show_spo2)
+        # ...then a heart-rate-only source (a watch or strap) loses it after 30 s.
+        self.app.last_spo2 -= self.gui.SPO2_HIDE_S + 1
+        self.app._age_readout()
         self.assertFalse(r.show_spo2)
         hr_only = r.panel_width
         # An SpO2 value shows it straight away, and the panel widens.

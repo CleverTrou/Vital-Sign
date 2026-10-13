@@ -182,7 +182,7 @@ class Readout(tk.Canvas):
         self.source_line = ""
         self.stale = True
         # Hidden for heart-rate-only sources; App decides (SPO2_HIDE_S).
-        self.show_spo2 = False
+        self.show_spo2 = True
         self.history: list[tuple[float, int]] = []
         self.panel_width = 0.0
         self.trend_box = (0.0, 0.0, 0.0, 0.0)
@@ -327,8 +327,9 @@ class App:
         self.bridge_up = False
         self.busy = False
         self.last_reading = 0.0
-        # When an SpO2 value last arrived (monotonic seconds); -inf = never.
-        self.last_spo2 = float("-inf")
+        # When an SpO2 value last arrived (monotonic seconds). Counted from
+        # startup, so the full panel shows for the first SPO2_HIDE_S too.
+        self.last_spo2 = time.monotonic()
         self.last_state = ""
         self._last_trend_draw = 0.0
         self.fonts = Fonts(root, brand_font)

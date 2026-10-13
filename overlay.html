@@ -482,7 +482,9 @@
   // without one -- long enough that a ring settling back onto a finger
   // doesn't make the panel flicker between widths.
   const SPO2_HIDE_MS = 30 * 1000;
-  let lastSpo2At = 0;
+  // Counted from load, so a freshly (re)loaded overlay keeps the full panel
+  // for the same 30 seconds -- e.g. while a ring is still connecting.
+  let lastSpo2At = Date.now();
 
   function updateSpo2Visibility() {
     const hide = Date.now() - lastSpo2At > SPO2_HIDE_MS;
