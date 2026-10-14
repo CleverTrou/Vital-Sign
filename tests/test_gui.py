@@ -168,6 +168,17 @@ class GuiTest(unittest.TestCase):
         notice.assert_not_called()
         self.assertFalse(self.gui.CONFIG.exists())
 
+    def test_opening_the_app_again_brings_the_window_back(self):
+        # The window is withdrawn under test, so check what it asks Tk to do
+        # rather than waiting on a real window to map.
+        with mock.patch.object(self.root, "deiconify") as deiconify, mock.patch.object(
+            self.root, "lift"
+        ) as lift, mock.patch.object(self.root, "focus_force") as focus:
+            self.root.tk.call("::tk::mac::ReopenApplication")
+        deiconify.assert_called_once()
+        lift.assert_called_once()
+        focus.assert_called_once()
+
     def test_start_stop_is_one_button(self):
         self.app._update_status()
         self.assertEqual(self.app.status.cget("text"), "○ Stopped")

@@ -159,6 +159,14 @@ To open it:
   support.)
 - **Any platform:** `.venv/bin/python3 gui.py`.
 
+On macOS, double-clicking `VitalSignBridge.app` also opens this window, after
+starting the bridge if it isn't running (the window opens even if that start
+fails, so you can see why), so either icon gets you here. Opening the
+app again while the window is up, or from the Dock, brings it forward.
+OBS's start action reaches `VitalSignBridge.app` through `open -a`, which
+macOS reports differently from a double-click, so that stays headless and
+never pops a window over your stream.
+
 It's a front end to the same pieces OBS automation uses: source changes are
 written to `config.sh`/`config.ps1`, and Start/Stop run
 `start_bridge`/`stop_bridge`, so the app and Advanced Scene Switcher always
