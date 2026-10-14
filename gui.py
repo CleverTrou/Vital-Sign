@@ -30,7 +30,7 @@ from tkinter import messagebox, ttk
 import websockets
 
 from vitalsign import brand
-from vitalsign.config_file import config_path, read_settings, write_sources
+from vitalsign.config_file import DEFAULT_WS_PORT, config_path, read_settings, write_sources
 from vitalsign.protocols import HDS_DEFAULT_PORT
 from vitalsign.sources import parse_source
 
@@ -339,7 +339,8 @@ class App:
         self._set_window_icon()
         self._build()
         self._refresh_sources()
-        LiveFeed(self.settings.ws_port, self.events).start()
+        self.feed = LiveFeed(self.settings.ws_port, self.events)
+        self.feed.start()
         self._poll()
 
     # -- layout -------------------------------------------------------
@@ -569,14 +570,60 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _matches_saved_settings(self, action: str) -> bool:
+        """Check, before (re)starting, that the file the bridge will read
+        agrees with the list this window shows.
+
+        The start script reads config.sh, not this window, and a window left
+        open can go stale (the file deleted, or edited by hand or by another
+        copy of the app). A missing file is restored from the window, since
+        nobody chose to empty it and starting without it would silently
+        scan for any Bluetooth device. A file that exists but differs wins,
+        because it is what OBS's automation starts with; the window is
+        updated to match and the start is held back so the list can be
+        checked first.
+        """
+        try:
+            if not CONFIG.exists():
+                if not self.settings.sources:
+                    if self.settings.ws_port != DEFAULT_WS_PORT:
+                        write_sources(CONFIG, [], self.settings.ws_port)
+                    return True
+                write_sources(CONFIG, self.settings.sources, self.settings.ws_port)
+                messagebox.showinfo(
+                    "Vital Sign",
+                    f"{CONFIG.name} was missing, so the bridge would have scanned for any Bluetooth "
+                    "device instead of using the sources listed here. It has been restored from this window.",
+                )
+                return True
+            saved = read_settings(CONFIG)
+            for spec in saved.sources:
+                parse_source(spec)  # a hand-edited value the bridge would refuse
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Vital Sign", f"Couldn't check {CONFIG.name}:\n{e}")
+            return False
+        if saved.sources == self.settings.sources and saved.ws_port == self.settings.ws_port:
+            return True
+        self.settings = saved
+        self.feed.port = saved.ws_port
+        self._refresh_sources()
+        messagebox.showinfo(
+            "Vital Sign",
+            f"{CONFIG.name} was changed outside this window, so the window now shows what is saved. "
+            f"Check it, then press {action} again.",
+        )
+        return False
+
     def start(self) -> None:
-        self._in_background("Starting…", "start_bridge")
+        if self._matches_saved_settings("Start"):
+            self._in_background("Starting…", "start_bridge")
 
     def stop(self) -> None:
         self._in_background("Stopping…", "stop_bridge")
 
     def restart(self) -> None:
-        self._in_background("Restarting…", "stop_bridge", "start_bridge")
+        if self._matches_saved_settings("Restart"):
+            self._in_background("Restarting…", "stop_bridge", "start_bridge")
 
     def _stoppable(self) -> bool:
         return self.bridge_up or PIDFILE.exists()

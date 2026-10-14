@@ -84,6 +84,90 @@ class GuiTest(unittest.TestCase):
         self.assertEqual(self.app.settings.sources, ["hds"])
         self.assertEqual(len(self.rows()), 1)
 
+    def _press_start(self):
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showinfo"
+        ) as notice:
+            self.app.start()
+        return run, notice
+
+    def test_start_with_a_matching_file_just_starts(self):
+        self.app._add("hds")
+        run, notice = self._press_start()
+        run.assert_called_once_with("Starting…", "start_bridge")
+        notice.assert_not_called()
+
+    def test_start_restores_a_missing_file_from_the_window(self):
+        self.app._add("hds")
+        self.gui.CONFIG.unlink()
+        run, notice = self._press_start()
+        self.assertIn('SOURCES="hds"', self.gui.CONFIG.read_text())
+        notice.assert_called_once()
+        run.assert_called_once()
+
+    def test_start_adopts_a_file_changed_elsewhere_and_holds_back(self):
+        self.app._add("hds")
+        self.gui.write_sources(self.gui.CONFIG, ["demo"])
+        run, notice = self._press_start()
+        self.assertEqual(self.app.settings.sources, ["demo"])
+        self.assertEqual([r[1] for r in self.rows()], ["Demo readings"])
+        notice.assert_called_once()
+        run.assert_not_called()
+
+    def test_start_keeps_a_custom_port_when_restoring_the_file(self):
+        self.gui.CONFIG.write_text('SOURCES="hds"\nWS_PORT="8766"\n')
+        self.app.settings = self.gui.read_settings(self.gui.CONFIG)
+        self.gui.CONFIG.unlink()
+        run, _ = self._press_start()
+        self.assertEqual(self.gui.read_settings(self.gui.CONFIG).ws_port, 8766)
+        run.assert_called_once()
+
+    def test_start_keeps_a_custom_port_even_with_no_sources(self):
+        self.gui.CONFIG.write_text('WS_PORT="8766"\n')
+        self.app.settings = self.gui.read_settings(self.gui.CONFIG)
+        self.gui.CONFIG.unlink()
+        run, notice = self._press_start()
+        self.assertEqual(self.gui.read_settings(self.gui.CONFIG).ws_port, 8766)
+        run.assert_called_once()
+        notice.assert_not_called()
+
+    def test_start_refuses_a_saved_source_the_bridge_would_reject(self):
+        self.app._add("hds")
+        self.gui.CONFIG.write_text('SOURCES="pulsoid"\n')
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showerror"
+        ) as error:
+            self.app.start()
+        error.assert_called_once()
+        self.assertIn("pulsoid", error.call_args.args[1])
+        self.assertEqual(self.app.settings.sources, ["hds"])
+        run.assert_not_called()
+
+    def test_start_follows_a_port_changed_elsewhere(self):
+        self.app._add("hds")
+        self.gui.CONFIG.write_text(self.gui.CONFIG.read_text() + 'WS_PORT="8766"\n')
+        run, notice = self._press_start()
+        self.assertEqual(self.app.settings.ws_port, 8766)
+        self.assertEqual(self.app.feed.port, 8766)
+        notice.assert_called_once()
+        run.assert_not_called()
+
+    def test_restart_does_not_stop_the_bridge_when_it_will_not_start(self):
+        self.app._add("hds")
+        self.gui.write_sources(self.gui.CONFIG, [])
+        with mock.patch.object(self.app, "_in_background") as run, mock.patch.object(
+            self.gui.messagebox, "showinfo"
+        ) as notice:
+            self.app.restart()
+        run.assert_not_called()
+        self.assertIn("press Restart again", notice.call_args.args[1])
+
+    def test_start_with_no_sources_and_no_file_just_starts(self):
+        run, notice = self._press_start()
+        run.assert_called_once()
+        notice.assert_not_called()
+        self.assertFalse(self.gui.CONFIG.exists())
+
     def test_start_stop_is_one_button(self):
         self.app._update_status()
         self.assertEqual(self.app.status.cget("text"), "○ Stopped")
