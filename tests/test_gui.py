@@ -167,6 +167,7 @@ class GuiTest(unittest.TestCase):
         run.assert_called_once()
         notice.assert_not_called()
         self.assertFalse(self.gui.CONFIG.exists())
+
     def test_opening_the_app_again_brings_the_window_back(self):
         # The window is withdrawn under test, so check what it asks Tk to do
         # rather than waiting on a real window to map.
