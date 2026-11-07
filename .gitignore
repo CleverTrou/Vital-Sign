@@ -5,6 +5,7 @@ config.ps1
 
 # Runtime state from start/stop_bridge.sh|.ps1.
 .bridge.pid
+.tunnel.pid
 bridge.log
 bridge.out.log
 

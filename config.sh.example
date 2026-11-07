@@ -25,3 +25,14 @@
 # example of a *different* value -- the actual default is 8765). If you
 # change it, also update WS_URL at the top of overlay.html's <script>.
 # WS_PORT="8766"
+
+# OBS on another computer -- a cloud gaming PC, or a separate streaming PC.
+# The bridge has to stay here, near your Bluetooth device, so this opens an
+# SSH tunnel that makes that computer's localhost:WS_PORT lead back to this
+# one's. Load overlay.html there as a local-file Browser Source exactly as
+# you would here; nothing in it changes. See "OBS on another computer" in
+# the README for what that computer needs (an SSH server and your key).
+# Any ssh destination works; a Host alias from ~/.ssh/config keeps the user,
+# key and address in one place:
+# TUNNEL_HOST="user@100.64.0.10"
+# TUNNEL_HOST="streaming-pc"

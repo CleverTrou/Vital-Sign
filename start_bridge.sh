@@ -16,12 +16,14 @@ cd "$DIR"
 SOURCES=""
 ADDRESS=""
 WS_PORT="8765"
+TUNNEL_HOST=""
 if [[ -f "$DIR/config.sh" ]]; then
   # shellcheck source=config.sh
   source "$DIR/config.sh"
 fi
 
 PIDFILE="$DIR/.bridge.pid"
+TUNNEL_PIDFILE="$DIR/.tunnel.pid"
 LOGFILE="$DIR/bridge.log"
 
 # Confirms a PID is actually still our bridge.py, not an unrelated process
@@ -40,21 +42,48 @@ is_bridge_process() {
   [[ -n "$cmd" && "$cmd" == *"$DIR/bridge.py"* ]]
 }
 
-if [[ -f "$PIDFILE" ]] && is_bridge_process "$(cat "$PIDFILE")"; then
-  exit 0  # already running
-fi
-rm -f "$PIDFILE"
+# The same check for tunnel.sh, which runs as "bash $DIR/tunnel.sh ...".
+is_tunnel_process() {
+  local cmd
+  cmd="$(ps -p "$1" -o command= -ww 2>/dev/null)" || return 1
+  [[ -n "$cmd" && "$cmd" == *"$DIR/tunnel.sh"* ]]
+}
 
-ARGS=(--ws-port "$WS_PORT")
-# Space-separated --source values, highest priority first.
-for source in $SOURCES; do
-  ARGS+=(--source "$source")
-done
-if [[ -n "$ADDRESS" ]]; then
-  ARGS+=(--address "$ADDRESS")
-fi
+start_bridge() {
+  if [[ -f "$PIDFILE" ]] && is_bridge_process "$(cat "$PIDFILE")"; then
+    return 0  # already running
+  fi
+  rm -f "$PIDFILE"
 
-nohup "$DIR/.venv/bin/python3" "$DIR/bridge.py" "${ARGS[@]}" \
-  >> "$LOGFILE" 2>&1 &
-echo $! > "$PIDFILE"
-disown  # detach from this shell so the bridge outlives the ASS/OBS process tree that spawned it
+  local ARGS=(--ws-port "$WS_PORT")
+  # Space-separated --source values, highest priority first.
+  for source in $SOURCES; do
+    ARGS+=(--source "$source")
+  done
+  if [[ -n "$ADDRESS" ]]; then
+    ARGS+=(--address "$ADDRESS")
+  fi
+
+  nohup "$DIR/.venv/bin/python3" "$DIR/bridge.py" "${ARGS[@]}" \
+    >> "$LOGFILE" 2>&1 &
+  echo $! > "$PIDFILE"
+  disown  # detach from this shell so the bridge outlives the ASS/OBS process tree that spawned it
+}
+
+# Only when OBS runs on another computer (TUNNEL_HOST in config.sh).
+# Checked separately from the bridge, so setting TUNNEL_HOST and pressing
+# Start again opens the tunnel without restarting a bridge that's running.
+start_tunnel() {
+  [[ -n "$TUNNEL_HOST" ]] || return 0
+  if [[ -f "$TUNNEL_PIDFILE" ]] && is_tunnel_process "$(cat "$TUNNEL_PIDFILE")"; then
+    return 0  # already running
+  fi
+  rm -f "$TUNNEL_PIDFILE"
+  nohup bash "$DIR/tunnel.sh" "$TUNNEL_HOST" "$WS_PORT" "$LOGFILE" \
+    > /dev/null 2>&1 &
+  echo $! > "$TUNNEL_PIDFILE"
+  disown
+}
+
+start_bridge
+start_tunnel
