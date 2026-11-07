@@ -355,6 +355,73 @@ In OBS: **Sources → + → Browser Source**
 Reload the browser source (right-click → *Interact*/*Refresh*) any time you
 restart `bridge.py`.
 
+### OBS on another computer
+
+The bridge has to run on the computer your Bluetooth device can reach, but
+OBS doesn't: it can be a separate streaming PC, or a cloud gaming PC in a
+data center. Set `TUNNEL_HOST` in `config.sh`, and `start_bridge.sh` opens
+an SSH tunnel to that computer next to the bridge (`stop_bridge.sh` closes
+it). The tunnel makes *that* computer's `localhost:8765` lead back to this
+one's, so `overlay.html` there connects exactly as it would here and needs
+no changes. macOS and Linux only for now: the Windows `.ps1` scripts don't
+open a tunnel.
+
+On the computer running OBS:
+
+1. Run an SSH server that has your public key. On Windows that's the
+   built-in **OpenSSH Server** optional feature; on macOS, *Remote Login*.
+   Port forwarding is allowed by default; if the server turns it off
+   (`AllowTcpForwarding no`), the log says the forward failed.
+2. Make sure this computer can reach it. Across the internet, a VPN such as
+   Tailscale is the easy way; nothing needs to be opened to the public.
+3. Copy `overlay.html` and the `assets/fonts` folder there, keeping them
+   side by side, and add the overlay as a local-file Browser Source as in
+   step 2 above.
+
+On this computer, put the connection details in `~/.ssh/config` and name
+that alias in `config.sh`:
+
+```text
+# ~/.ssh/config
+Host streaming-pc
+  HostName 100.64.0.10        # its address; a Tailscale IP works
+  User you
+  IdentityFile ~/.ssh/streaming_pc_key
+  IdentitiesOnly yes
+```
+
+```bash
+# config.sh
+TUNNEL_HOST="streaming-pc"
+```
+
+Check it once by hand with `ssh streaming-pc` before relying on it. The
+tunnel runs with `BatchMode`, so ssh never stops to ask for a password or
+passphrase (nobody would be there to answer when OBS automation starts
+it): use a key that doesn't need one, or an agent that's already
+unlocked. Then press **Restart** in the control app, or run
+`./start_bridge.sh`. Running it again opens the tunnel without restarting
+a bridge that's already running.
+
+The tunnel's progress goes to `bridge.log`, so it shows in the control
+app's log:
+
+- **"Tunnel open: OBS on … can reach the overlay"**: working. The overlay
+  there reconnects by itself within a couple of seconds.
+- **"Tunnel to … failed: …"**: the reason, written once. It keeps retrying
+  (every 5 seconds at first, backing off to once a minute) until it
+  connects, so you can start the bridge before the other computer is on.
+  If the other computer stops or restarts, the tunnel notices within about
+  45 seconds and reconnects when it's back.
+- **"REMOTE HOST IDENTIFICATION HAS CHANGED"**: the other computer has a
+  new host key. Cloud gaming PCs get one every time they're rebuilt. The
+  tunnel refuses rather than trust it silently; once you're sure it's the
+  same machine, run `ssh-keygen -R <its address>` and Restart. A host it
+  has never seen is remembered automatically the first time.
+- **"remote port forwarding failed"**: something on the other computer
+  already holds port 8765, often the previous connection that hasn't timed
+  out yet (it retries), or a bridge running there too.
+
 ## Automatic startup
 
 Stock OBS has no "run a command when X happens" hook, so this uses the free
@@ -617,10 +684,17 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
 
 ## Security & privacy
 
-- **Nothing leaves your machine.** `bridge.py` binds its WebSocket server to
-  `localhost` only — it's never reachable from your network, let alone the
-  internet. There's no cloud service, account, or API key involved anywhere
-  in this project.
+- **Nothing leaves your machine** unless you set `TUNNEL_HOST`.
+  `bridge.py` binds its WebSocket server to `localhost` only — it's never
+  reachable from your network, let alone the internet. There's no cloud
+  service, account, or API key involved anywhere in this project.
+- **The tunnel to a remote OBS sends your readings to that computer, and
+  nowhere else.** They travel inside your SSH connection, which is
+  encrypted and authenticated by your own key, and arrive on that
+  computer's `localhost`. No port is opened on either network. Anything
+  running on that computer can read `localhost:8765` while the tunnel is
+  up, the same as on this one, so only tunnel to a computer you'd trust
+  to run the bridge itself.
 - **The HDS listener is the one network-facing part, and only when you ask
   for it** (`--source hds`). It listens on port 3476 on all interfaces,
   because the watch reaches your computer over Wi-Fi or Tailscale. It only
@@ -650,7 +724,7 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
 - **What's excluded from git** (see `.gitignore`): `config.sh`/`config.ps1`
   (contain your device's BLE address — a device identifier, not a secret, but
   no reason to publish it), `bridge.log`/`bridge.out.log` (may contain
-  historical readings), and `.bridge.pid`. Only the `.example` templates
+  historical readings), and `.bridge.pid`/`.tunnel.pid`. Only the `.example` templates
   are tracked.
 - **BLE pairing**: connecting means the device briefly can't be reached by
   its own app (BLE allows one central connection at a time). No pairing

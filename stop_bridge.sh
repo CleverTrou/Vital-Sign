@@ -5,6 +5,28 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDFILE="$DIR/.bridge.pid"
+TUNNEL_PIDFILE="$DIR/.tunnel.pid"
+
+# The tunnel to a remote OBS (TUNNEL_HOST in config.sh), if there is one.
+# Stopped first and regardless of the bridge's own PID file, so a tunnel
+# never outlives a bridge that crashed. Same PID-reuse check as below.
+if [[ -f "$TUNNEL_PIDFILE" ]]; then
+  TPID="$(cat "$TUNNEL_PIDFILE")"
+  TCMD="$(ps -p "$TPID" -o command= -ww 2>/dev/null || true)"
+  if [[ -n "$TCMD" && "$TCMD" == *"$DIR/tunnel.sh"* ]]; then
+    kill "$TPID" 2>/dev/null || true       # tunnel.sh closes its ssh and exits
+    for _ in $(seq 1 20); do
+      kill -0 "$TPID" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$TPID" 2>/dev/null; then
+      # -9 skips tunnel.sh's cleanup, so take its ssh down with it.
+      pkill -9 -P "$TPID" 2>/dev/null || true
+      kill -9 "$TPID" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$TUNNEL_PIDFILE"
+fi
 
 [[ -f "$PIDFILE" ]] || exit 0
 PID="$(cat "$PIDFILE")"

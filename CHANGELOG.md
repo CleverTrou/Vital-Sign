@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- OBS can run on another computer, such as a separate streaming PC or a
+  cloud gaming PC. Set `TUNNEL_HOST` in `config.sh` and the start script
+  opens an SSH tunnel to it beside the bridge, so the overlay there connects
+  as if the bridge were local. It reconnects by itself when that computer
+  restarts. macOS and Linux only for now. ([#PR](https://github.com/CleverTrou/Vital-Sign/pull/PR))
+
 ## [0.3.0] - 2026-10-13
 
 ### Added
