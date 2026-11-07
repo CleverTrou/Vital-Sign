@@ -691,10 +691,13 @@ To change the window length, edit `TREND_WINDOW_MS` (currently 5 minutes).
 - **The tunnel to a remote OBS sends your readings to that computer, and
   nowhere else.** They travel inside your SSH connection, which is
   encrypted and authenticated by your own key, and arrive on that
-  computer's `localhost`. No port is opened on either network. Anything
-  running on that computer can read `localhost:8765` while the tunnel is
-  up, the same as on this one, so only tunnel to a computer you'd trust
-  to run the bridge itself.
+  computer's `localhost`. No port is opened on either network, as long as
+  that computer's SSH server leaves `GatewayPorts` at its default of `no`.
+  With `GatewayPorts yes`, the forwarded port listens on all of its
+  network interfaces whatever the tunnel asks for, so check `sshd_config`
+  there. Anything running on that computer can read `localhost:8765` while
+  the tunnel is up, the same as on this one, so only tunnel to a computer
+  you'd trust to run the bridge itself.
 - **The HDS listener is the one network-facing part, and only when you ask
   for it** (`--source hds`). It listens on port 3476 on all interfaces,
   because the watch reaches your computer over Wi-Fi or Tailscale. It only

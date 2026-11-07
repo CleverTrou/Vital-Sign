@@ -5,6 +5,7 @@ The fake ssh on PATH records its arguments and PID, then either stays up
 touches the network.
 """
 
+import contextlib
 import os
 import shutil
 import signal
@@ -25,6 +26,13 @@ FAKE_SSH = textwrap.dedent("""\
     echo $$ >> "$FAKE_SSH_PIDS"
     if [ "$FAKE_SSH_MODE" = fail ]; then
       echo "ssh: connect to host example port 22: Operation timed out" >&2
+      exit 255
+    fi
+    if [ "$FAKE_SSH_MODE" = noisy ]; then
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        echo "connect_to localhost port 8765: failed." >&2
+      done
+      echo "Connection reset by peer" >&2
       exit 255
     fi
     exec sleep 300
@@ -82,10 +90,8 @@ class TunnelTestCase(unittest.TestCase):
 
     def stop_all_fake_ssh(self):
         for pid in self.ssh_pids():
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
 
 class TunnelScriptTest(TunnelTestCase):
@@ -147,6 +153,30 @@ class TunnelScriptTest(TunnelTestCase):
         self.assertEqual(proc.wait(timeout=5), 2)
         self.assertFalse(self.args_file.exists(), "ssh was run")
 
+    def test_refuses_ports_outside_1_to_65535(self):
+        # 0 would make the other end pick a random port OBS can't find.
+        for port in ("0", "00000", "65536", "123456"):
+            proc = self.start(port=port)
+            self.assertEqual(proc.wait(timeout=5), 2, port)
+        self.assertFalse(self.args_file.exists(), "ssh was run")
+        # Leading zeros are decimal, not octal: 08765 is port 8765.
+        proc = self.start(port="08765")
+        self.assertTrue(wait_for(lambda: self.args_file.exists()))
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=5)
+
+    def test_repeated_ssh_errors_are_logged_once_each(self):
+        # What ssh writes while the tunnel is up but the bridge isn't.
+        self.env["FAKE_SSH_MODE"] = "noisy"
+        self.env["VITALSIGN_TUNNEL_UP_AFTER"] = "30"
+        proc = self.start()
+        self.assertTrue(wait_for(lambda: "failed:" in self.log_text()))
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=5)
+        line = next(x for x in self.log_text().splitlines() if "failed:" in x)
+        self.assertEqual(line.count("connect_to localhost port 8765: failed."), 1, line)
+        self.assertIn("Connection reset", line)
+
 
 class StartStopScriptsTest(TunnelTestCase):
     """start_bridge.sh / stop_bridge.sh in a scratch copy with a stand-in bridge."""
@@ -205,7 +235,7 @@ class StartStopScriptsTest(TunnelTestCase):
         self.run_script("stop_bridge.sh")
         (ssh_pid,) = self.ssh_pids()
         for pid in (bridge, tunnel, ssh_pid):
-            self.assertTrue(wait_for(lambda: not alive(pid), 5), f"{pid} still running")
+            self.assertTrue(wait_for(lambda p=pid: not alive(p), 5), f"{pid} still running")
         self.assertIsNone(self.pid(".bridge.pid"))
         self.assertIsNone(self.pid(".tunnel.pid"))
 

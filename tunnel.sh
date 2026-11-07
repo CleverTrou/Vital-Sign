@@ -10,7 +10,10 @@
 #
 # Nothing listens on the network here or there: ssh -R makes the OTHER
 # computer's localhost:PORT lead back to this one's, inside the SSH
-# connection, which is why bridge.py can stay bound to localhost.
+# connection, which is why bridge.py can stay bound to localhost. That
+# holds as long as the other computer's sshd leaves GatewayPorts at its
+# default (no); with "yes" it binds the port on every interface instead,
+# whatever the client asks for.
 #
 # Written for bash 3.2, which is what macOS runs this with.
 set -uo pipefail
@@ -35,8 +38,11 @@ if [[ -z "$HOST" || "$HOST" == -* ]]; then
   log ERROR "Tunnel: TUNNEL_HOST must be an ssh destination like user@host, got '$HOST'"
   exit 2
 fi
-if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-  log ERROR "Tunnel: port must be a number, got '$PORT'"
+# Format first, so the arithmetic only ever sees digits. 10# keeps a
+# leading zero from being read as octal. Port 0 would ask the other end
+# for a random port that OBS could never find.
+if ! [[ "$PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$PORT < 1 || 10#$PORT > 65535 )); then
+  log ERROR "Tunnel: port must be a number from 1 to 65535, got '$PORT'"
   exit 2
 fi
 
@@ -44,16 +50,22 @@ SSH_PID=""
 SLEEP_PID=""
 ERRFILE="$(mktemp "${TMPDIR:-/tmp}/vitalsign-tunnel.XXXXXX")"
 
-stop() {
+# On every exit, including an unexpected one: an ssh left behind would keep
+# holding the port on the other computer, and the next tunnel would fail
+# with "remote port forwarding failed" until it timed out.
+cleanup() {
   local pid
   for pid in $SSH_PID $SLEEP_PID; do
     kill "$pid" 2>/dev/null
     wait "$pid" 2>/dev/null
   done
   rm -f "$ERRFILE"
-  log INFO "Tunnel to $HOST closed"
-  exit 0
 }
+stop() {
+  log INFO "Tunnel to $HOST closed"
+  exit 0  # cleanup runs from the EXIT trap
+}
+trap cleanup EXIT
 trap stop TERM INT HUP
 
 # Interruptible sleep: bash runs a trap only between commands, so a plain
@@ -104,9 +116,13 @@ while true; do
   status=$?
   SSH_PID=""
 
-  # One line for the log: drop ssh's "Permanently added" notice and the
-  # rows of @ around its changed-host-key warning, keep the words.
-  error="$(grep -v -e '^Warning: Permanently added' -e '^@*$' "$ERRFILE" | tr '\n' ' ' | sed 's/ *$//')"
+  # One line for the log: drop ssh's "Permanently added" notice, the rows
+  # of @ around its changed-host-key warning, and repeats. While the tunnel
+  # is up but the bridge isn't, ssh adds "connect_to localhost port ...:
+  # failed." for every overlay retry (one every 2 seconds), so keep one
+  # copy of each line and cap the total.
+  error="$(grep -v -e '^Warning: Permanently added' -e '^@*$' "$ERRFILE" \
+    | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ *$//' | cut -c 1-500)"
   [[ -n "$error" ]] || error="ssh exited with status $status"
   # Log each new failure once, not every retry: a cloud PC that's switched
   # off would otherwise fill the log with the same timeout all evening.
