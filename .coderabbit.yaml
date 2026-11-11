@@ -19,8 +19,6 @@ reviews:
       - "github-actions[bot]"
 
   path_filters:
-    - "!**/__pycache__/**"
-    - "!**/.venv/**"
     - "!**/*.png"
 
   # Standing review instructions, identical in every CleverTrou repo. Change
